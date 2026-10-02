@@ -1,6 +1,7 @@
+using MarketAlert.Infrastructure;
 using MarketAlert.Interfaces;
-using MarketAlert.Middleware;
 using MarketAlert.Models.Configuration;
+using MarketAlert.Repositories;
 using MarketAlert.Services;
 using NLog;
 using NLog.Config;
@@ -31,31 +32,42 @@ builder.Logging.ClearProviders();
 builder.Host.UseNLog();
 
 // --------------------------------------------------
-// Services
+// Controllers
 // --------------------------------------------------
 
 builder.Services.AddControllers();
 
-builder.Services.AddHttpClient<
-    ILiveMarketDataService,
-    LiveMarketDataService>(client =>
-    {
-        client.BaseAddress = new Uri(
-            "https://dartstock-uatserv.upstox.com/");
+// --------------------------------------------------
+// Database
+// --------------------------------------------------
 
-        client.Timeout = TimeSpan.FromSeconds(30);
-    });
+builder.Services.AddSingleton<
+    IDbConnectionFactory,
+    SqliteConnectionFactory>();
+
+// --------------------------------------------------
+// Repositories
+// --------------------------------------------------
+
+builder.Services.AddScoped<
+    IHistoricalDataRepository,
+    HistoricalDataRepository>();
+
+builder.Services.AddScoped<
+    IMarketSymbolRepository,
+    MarketSymbolRepository>();
+
+builder.Services.AddScoped<
+    ISegmentRepository,
+    SegmentRepository>();
+
+// --------------------------------------------------
+// Services
+// --------------------------------------------------
 
 builder.Services.AddScoped<
     IMarketStatusService,
     MarketStatusService>();
-
-builder.Services.AddScoped<
-    IHistoricalDataService,
-    HistoricalDataService>();
-
-builder.Services.Configure<TriangleSettings>(
-    builder.Configuration.GetSection("Triangle"));
 
 builder.Services.AddScoped<
     ISwingPointService,
@@ -74,19 +86,42 @@ builder.Services.AddScoped<
     TriangleAlertService>();
 
 // --------------------------------------------------
+// Live Market API
+// --------------------------------------------------
+
+builder.Services.AddHttpClient<
+    ILiveMarketDataService,
+    LiveMarketDataService>(client =>
+    {
+        client.BaseAddress = new Uri(
+            "https://dartstock-uatserv.upstox.com/");
+
+        client.Timeout = TimeSpan.FromSeconds(30);
+    });
+
+// --------------------------------------------------
+// Configuration
+// --------------------------------------------------
+
+builder.Services.Configure<TriangleSettings>(
+    builder.Configuration.GetSection("Triangle"));
+
+// --------------------------------------------------
 // Swagger
 // --------------------------------------------------
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// --------------------------------------------------
+// Build
+// --------------------------------------------------
+
 var app = builder.Build();
 
 // --------------------------------------------------
-// Global Exception Middleware
+// Swagger
 // --------------------------------------------------
-
-app.UseMiddleware<GlobalExceptionMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
@@ -94,9 +129,17 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+// --------------------------------------------------
+// Middleware
+// --------------------------------------------------
+
 app.UseHttpsRedirection();
 
 app.UseAuthorization();
+
+// --------------------------------------------------
+// Controllers
+// --------------------------------------------------
 
 app.MapControllers();
 

@@ -84,7 +84,7 @@ namespace MarketAlert.Services
                 divisor);
 
             // Apply precision to live quotes
-            foreach (var quote in result.Data)
+            foreach (var quote in result.Quotes)
             {
                 quote.Open /= divisor;
                 quote.High /= divisor;

@@ -43,7 +43,7 @@ namespace MarketAlert.Repositories
 
             const string sql = """
                 SELECT precision
-                FROM Segment
+                FROM mastersegment
                 WHERE segment_code = @SegmentCode
                 LIMIT 1;
                 """;
