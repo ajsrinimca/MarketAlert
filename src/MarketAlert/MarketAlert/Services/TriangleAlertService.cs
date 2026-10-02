@@ -6,22 +6,26 @@ namespace MarketAlert.Services;
 public class TriangleAlertService : ITriangleAlertService
 {
     private readonly IMarketDataService _marketDataService;
+    private readonly IMarketSymbolRepository _marketSymbolRepository;
     private readonly ITriangleDetectionService _triangleDetectionService;
     private readonly ILogger<TriangleAlertService> _logger;
 
     public TriangleAlertService(
         IMarketDataService marketDataService,
+        IMarketSymbolRepository marketSymbolRepository,
         ITriangleDetectionService triangleDetectionService,
         ILogger<TriangleAlertService> logger)
     {
         _marketDataService = marketDataService;
+        _marketSymbolRepository = marketSymbolRepository;
         _triangleDetectionService = triangleDetectionService;
         _logger = logger;
     }
 
     public async Task<TriangleAlertResponse> GetTriangleAlertsAsync(
         string exchange,
-        string? ticker,
+        string? group,
+        bool includeLive,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(exchange))
@@ -33,32 +37,72 @@ public class TriangleAlertService : ITriangleAlertService
 
         exchange = exchange.Trim().ToUpperInvariant();
 
-        if (!string.IsNullOrWhiteSpace(ticker))
+        if (!string.IsNullOrWhiteSpace(group))
         {
-            ticker = ticker.Trim().ToUpperInvariant();
+            group = group.Trim();
         }
 
         _logger.LogInformation(
-            "Starting triangle alert analysis. Exchange: {Exchange}, Ticker: {Ticker}",
+            "Starting triangle alert analysis. " +
+            "Exchange: {Exchange}, Group: {Group}, IncludeLive: {IncludeLive}",
             exchange,
-            ticker ?? "ALL");
+            group ?? "ALL",
+            includeLive);
 
-        // Get the correct candles.
+        // ---------------------------------------------------------
+        // Resolve group to tickers
         //
-        // MarketDataService is responsible for:
-        // OPEN  -> 29 EOD + 1 Live
-        // CLOSE -> 30 EOD
+        // Group supplied:
+        //     Index/Sector -> List of tickers
         //
-        var marketData = await _marketDataService.GetMarketDataAsync(
+        // Group not supplied:
+        //     Empty ticker list -> ALL tickers
+        // ---------------------------------------------------------
+
+        var tickers = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(group))
+        {
+            tickers =
+                await _marketSymbolRepository.GetTickersByGroupAsync(
+                    group,
+                    cancellationToken);
+        }
+
+        _logger.LogInformation(
+            "Ticker selection completed. " +
+            "Exchange: {Exchange}, Group: {Group}, TickerCount: {TickerCount}",
             exchange,
-            ticker,
-            cancellationToken);
+            group ?? "ALL",
+            tickers.Count);
+
+        // ---------------------------------------------------------
+        // Get market data
+        //
+        // includeLive = false
+        //     EOD only
+        //
+        // includeLive = true
+        //     Market Open  -> EOD + Live
+        //     Market Closed -> EOD only
+        // ---------------------------------------------------------
+
+        var marketData =
+            await _marketDataService.GetMarketDataAsync(
+                exchange,
+                tickers,
+                includeLive,
+                cancellationToken);
 
         var response = new TriangleAlertResponse
         {
             TimeStamp = DateTime.Now,
             Exchange = exchange
         };
+
+        // ---------------------------------------------------------
+        // Latest candle date
+        // ---------------------------------------------------------
 
         var latestCandleDate = marketData
             .SelectMany(x => x.Candles)
@@ -68,8 +112,13 @@ public class TriangleAlertService : ITriangleAlertService
 
         if (latestCandleDate != default)
         {
-            response.Ltd = latestCandleDate.ToString("yyyy-MM-dd");
+            response.Ltd =
+                latestCandleDate.ToString("yyyy-MM-dd");
         }
+
+        // ---------------------------------------------------------
+        // Triangle detection
+        // ---------------------------------------------------------
 
         foreach (var item in marketData)
         {
@@ -83,8 +132,12 @@ public class TriangleAlertService : ITriangleAlertService
         }
 
         _logger.LogInformation(
-            "Triangle alert analysis completed. Exchange: {Exchange}, TickerCount: {TickerCount}",
+            "Triangle alert analysis completed. " +
+            "Exchange: {Exchange}, Group: {Group}, " +
+            "IncludeLive: {IncludeLive}, TickerCount: {TickerCount}",
             exchange,
+            group ?? "ALL",
+            includeLive,
             response.Data.Count);
 
         return response;

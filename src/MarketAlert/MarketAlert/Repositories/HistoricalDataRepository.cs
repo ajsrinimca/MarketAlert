@@ -1,50 +1,63 @@
 ﻿using Dapper;
+using MarketAlert.Constants;
 using MarketAlert.Interfaces;
 using MarketAlert.Models;
-using Microsoft.Data.Sqlite;
 
-namespace MarketAlert.Services
+namespace MarketAlert.Repositories
 {
-    public class HistoricalDataService : IHistoricalDataService
+    public class HistoricalDataRepository : IHistoricalDataRepository
     {
-        private readonly IConfiguration _configuration;
-        private readonly ILogger<HistoricalDataService> _logger;
+        private readonly IDbConnectionFactory _connectionFactory;
+        private readonly ILogger<HistoricalDataRepository> _logger;
 
-        public HistoricalDataService(
-            IConfiguration configuration,
-            ILogger<HistoricalDataService> logger)
+        public HistoricalDataRepository(
+            IDbConnectionFactory connectionFactory,
+            ILogger<HistoricalDataRepository> logger)
         {
-            _configuration = configuration;
+            _connectionFactory = connectionFactory;
             _logger = logger;
         }
 
         public async Task<Dictionary<string, List<MarketCandle>>> GetDailyCandlesAsync(
             string exchange,
-            string? ticker,
+            List<string>? tickers,
             int candleCount,
             CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(exchange))
+            {
                 throw new ArgumentException(
                     "Exchange is required.",
                     nameof(exchange));
+            }
 
             if (candleCount <= 0)
+            {
                 throw new ArgumentException(
                     "Candle count must be greater than zero.",
                     nameof(candleCount));
+            }
 
             var exchangeId = exchange.Trim().ToUpperInvariant() switch
             {
                 "NSE" => 1,
                 "BSE" => 2,
+
                 _ => throw new ArgumentException(
                     $"Unsupported exchange: {exchange}",
                     nameof(exchange))
             };
 
-            using var connection = new SqliteConnection(
-                _configuration.GetConnectionString("EODData"));
+            var normalizedTickers = tickers?
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim().ToUpperInvariant())
+                .Distinct()
+                .ToList()
+                ?? new List<string>();
+
+            await using var connection =
+                _connectionFactory.CreateConnection(
+                    DatabaseConstants.EODData);
 
             await connection.OpenAsync(cancellationToken);
 
@@ -67,7 +80,10 @@ namespace MarketAlert.Services
                   AND s.Segment = 1
                   AND h.BarTypeId = 1
                   AND d.BarTypeId = 1
-                  AND (@Ticker IS NULL OR s.Ticker = @Ticker)
+                  AND (
+                        @HasTickers = 0
+                        OR s.Ticker IN @Tickers
+                      )
                 ORDER BY s.Ticker, d.Date DESC;
                 """;
 
@@ -77,9 +93,14 @@ namespace MarketAlert.Services
                     new
                     {
                         Exchange = exchangeId,
-                        Ticker = string.IsNullOrWhiteSpace(ticker)
-                            ? null
-                            : ticker.Trim().ToUpperInvariant()
+
+                        // 0 = get all tickers
+                        // 1 = filter using Tickers
+                        HasTickers = normalizedTickers.Count > 0
+                            ? 1
+                            : 0,
+
+                        Tickers = normalizedTickers
                     },
                     cancellationToken: cancellationToken));
 
@@ -104,10 +125,13 @@ namespace MarketAlert.Services
                         .ToList());
 
             _logger.LogInformation(
-                "Retrieved historical data for {TickerCount} ticker(s). Exchange: {Exchange}, CandleCount: {CandleCount}",
+                "Retrieved historical data for {TickerCount} ticker(s). " +
+                "Exchange: {Exchange}, CandleCount: {CandleCount}, " +
+                "TickerFilterApplied: {TickerFilterApplied}",
                 result.Count,
                 exchange,
-                candleCount);
+                candleCount,
+                normalizedTickers.Count > 0);
 
             return result;
         }

@@ -2,11 +2,11 @@ using MarketAlert.Models;
 
 namespace MarketAlert.Interfaces
 {
-    public interface IHistoricalDataService
+    public interface IHistoricalDataRepository
     {
         Task<Dictionary<string, List<MarketCandle>>> GetDailyCandlesAsync(
             string exchange,
-            string? ticker,
+            List<string>? tickers,
             int candleCount,
             CancellationToken cancellationToken = default);
     }

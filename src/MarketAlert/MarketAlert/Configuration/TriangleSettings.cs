@@ -1,4 +1,4 @@
-﻿namespace MarketAlert.Models.Configuration
+﻿namespace MarketAlert.Configuration
 {
     public class TriangleSettings
     {

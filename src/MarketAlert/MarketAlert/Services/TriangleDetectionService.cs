@@ -1,6 +1,6 @@
-﻿using MarketAlert.Interfaces;
+﻿using MarketAlert.Configuration;
+using MarketAlert.Interfaces;
 using MarketAlert.Models;
-using MarketAlert.Models.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace MarketAlert.Services

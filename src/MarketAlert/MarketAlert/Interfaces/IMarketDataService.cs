@@ -6,6 +6,7 @@ public interface IMarketDataService
 {
     Task<List<MarketDataResult>> GetMarketDataAsync(
         string exchange,
-        string? ticker,
+        List<string>? tickers,
+        bool includeLive,
         CancellationToken cancellationToken = default);
 }

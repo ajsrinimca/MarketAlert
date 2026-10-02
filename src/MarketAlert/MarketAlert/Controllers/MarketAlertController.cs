@@ -7,43 +7,41 @@ namespace MarketAlert.Controllers;
 [Route("api/eodanalytics/[controller]")]
 public class MarketAlertController : ControllerBase
 {
-    private readonly IHistoricalDataService _historicalDataService;
     private readonly ITriangleAlertService _triangleAlertService;
 
     public MarketAlertController(
-        IHistoricalDataService historicalDataService,
         ITriangleAlertService triangleAlertService)
     {
-        _historicalDataService = historicalDataService;
         _triangleAlertService = triangleAlertService;
     }
 
-    [HttpGet("eod/{exchange}/{ticker?}")]
-    public async Task<IActionResult> GetEodData(
+    [HttpGet("Triangle/{exchange}/{group?}")]
+    public async Task<IActionResult> GetTriangleAlert(
         string exchange,
-        string? ticker,
-        [FromQuery] int days = 30,
-    CancellationToken cancellationToken = default)
-    {
-        var result = await _historicalDataService.GetDailyCandlesAsync(
-            exchange,
-            ticker,
-            days,
-            cancellationToken);
-
-        return Ok(result);
-    }
-
-    [HttpGet("Triangle/{exchange}/{ticker?}")]
-    public async Task<IActionResult> GetTriangleBreakout(
-        string exchange,
-        string? ticker,
+        string? group,
         CancellationToken cancellationToken)
     {
         var result =
             await _triangleAlertService.GetTriangleAlertsAsync(
                 exchange,
-                ticker,
+                group,
+                includeLive: false,
+                cancellationToken);
+
+        return Ok(result);
+    }
+
+    [HttpGet("TriangleLive/{exchange}/{group?}")]
+    public async Task<IActionResult> GetTriangleAlertLive(
+        string exchange,
+        string? group,
+        CancellationToken cancellationToken)
+    {
+        var result =
+            await _triangleAlertService.GetTriangleAlertsAsync(
+                exchange,
+                group,
+                includeLive: true,
                 cancellationToken);
 
         return Ok(result);
