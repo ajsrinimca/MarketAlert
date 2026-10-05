@@ -1,0 +1,6 @@
+{
+  "TriangleAlert": {
+    "LiveMarketBaseUrl": "https://dartstock-uatserv.upstox.com/",
+    "TimeoutSeconds": 30
+  }
+}

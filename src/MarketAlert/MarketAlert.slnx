@@ -1,3 +1,4 @@
 <Solution>
   <Project Path="MarketAlert/MarketAlert.csproj" />
+  <Project Path="TriangleAlert/TriangleAlert.csproj" Id="207bef30-8dcc-47c4-a8fc-5bdac8589198" />
 </Solution>
