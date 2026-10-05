@@ -36,7 +36,7 @@ namespace TriangleAlert.Services
 
             var url = $"api/Quotes/equity/{exchange}";
 
-            _logger.LogInformation(
+            _logger.LogTrace(
                 "Fetching live market data. Exchange: {Exchange}",
                 exchange);
 
@@ -79,7 +79,7 @@ namespace TriangleAlert.Services
 
             var divisor = (decimal)Math.Pow(10, precision);
 
-            _logger.LogInformation(
+            _logger.LogTrace(
                 "Applying price precision. Segment: {SegmentCode}, Precision: {Precision}, Divisor: {Divisor}",
                 segmentCode,
                 precision,

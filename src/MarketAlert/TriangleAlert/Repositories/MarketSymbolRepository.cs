@@ -72,7 +72,7 @@ namespace TriangleAlert.Repositories
             // Found as Index
             if (tickers.Count > 0)
             {
-                _logger.LogInformation(
+                _logger.LogTrace(
                     "Group {Group} resolved as index. Found {Count} tickers.",
                     group,
                     tickers.Count);
@@ -115,7 +115,7 @@ namespace TriangleAlert.Repositories
             // Found as Sector
             if (tickers.Count > 0)
             {
-                _logger.LogInformation(
+                _logger.LogTrace(
                     "Group {Group} resolved as sector. Found {Count} tickers.",
                     group,
                     tickers.Count);
@@ -127,7 +127,7 @@ namespace TriangleAlert.Repositories
             // 3. Nothing found
             // ---------------------------------------------------------
 
-            _logger.LogWarning(
+            _logger.LogDebug(
                 "No index or sector found for group {Group}.",
                 group);
 

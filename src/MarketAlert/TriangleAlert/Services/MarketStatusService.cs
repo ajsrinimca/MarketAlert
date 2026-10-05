@@ -75,7 +75,7 @@ public class MarketStatusService : IMarketStatusService
 
         if (timings.Count == 0)
         {
-            _logger.LogWarning(
+            _logger.LogDebug(
                 "No market timing configuration found for {Exchange}/{Segment}",
                 exchange,
                 segment);
@@ -97,7 +97,7 @@ public class MarketStatusService : IMarketStatusService
 
         if (timing == null)
         {
-            _logger.LogWarning(
+            _logger.LogDebug(
                 "No matching market state found for {Exchange}/{Segment} at {CurrentTime}",
                 exchange,
                 segment,

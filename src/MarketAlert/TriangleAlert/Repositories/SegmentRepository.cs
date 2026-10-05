@@ -62,7 +62,7 @@ namespace TriangleAlert.Repositories
 
             if (result == null || result == DBNull.Value)
             {
-                _logger.LogWarning(
+                _logger.LogDebug(
                     "Precision not found for segment code: {SegmentCode}",
                     segmentCode);
 

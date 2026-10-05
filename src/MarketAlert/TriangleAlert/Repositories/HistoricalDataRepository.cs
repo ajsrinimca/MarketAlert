@@ -125,7 +125,7 @@ namespace TriangleAlert.Repositories
                         })
                         .ToList());
 
-            _logger.LogInformation(
+            _logger.LogTrace(
                 "Retrieved historical data for {TickerCount} ticker(s). " +
                 "Exchange: {Exchange}, CandleCount: {CandleCount}, " +
                 "TickerFilterApplied: {TickerFilterApplied}",

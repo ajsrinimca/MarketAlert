@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using TriangleAlert.Interfaces;
 using TriangleAlert.Models;
 
@@ -10,17 +11,23 @@ public class TriangleAlertService : ITriangleAlertService
     private readonly IMarketSymbolRepository _marketSymbolRepository;
     private readonly ITriangleDetectionService _triangleDetectionService;
     private readonly ILogger<TriangleAlertService> _logger;
+    private readonly TriangleAlertCache _triangleAlertCache;
+    private readonly IConfiguration _configuration;
 
     public TriangleAlertService(
         IMarketDataService marketDataService,
         IMarketSymbolRepository marketSymbolRepository,
         ITriangleDetectionService triangleDetectionService,
-        ILogger<TriangleAlertService> logger)
+        ILogger<TriangleAlertService> logger,
+        TriangleAlertCache triangleAlertCache,
+        IConfiguration configuration)
     {
         _marketDataService = marketDataService;
         _marketSymbolRepository = marketSymbolRepository;
         _triangleDetectionService = triangleDetectionService;
         _logger = logger;
+        _triangleAlertCache = triangleAlertCache;
+        _configuration = configuration;
     }
 
     public async Task<TriangleAlertResponse> GetTriangleAlertsAsync(
@@ -43,7 +50,77 @@ public class TriangleAlertService : ITriangleAlertService
             group = group.Trim();
         }
 
-        _logger.LogInformation(
+        var cacheKey = BuildCacheKey(
+            exchange,
+            group);
+
+        // ---------------------------------------------------------
+        // EOD CACHE
+        // ---------------------------------------------------------
+
+        if (!includeLive)
+        {
+            if (_triangleAlertCache.TryGetEod(
+                    cacheKey,
+                    out var cachedEodResponse))
+            {
+                _logger.LogDebug(
+                    "EOD triangle alert cache hit. " +
+                    "CacheKey: {CacheKey}",
+                    cacheKey);
+
+                return cachedEodResponse;
+            }
+
+            _logger.LogDebug(
+                "EOD triangle alert cache miss. " +
+                "CacheKey: {CacheKey}",
+                cacheKey);
+        }
+
+        // ---------------------------------------------------------
+        // INTRADAY CACHE
+        // ---------------------------------------------------------
+
+        var intradayCacheSeconds =
+            _configuration.GetValue<int>(
+                "TriangleAlert:IntradayCacheSeconds",
+                60);
+
+        if (intradayCacheSeconds <= 0)
+        {
+            throw new InvalidOperationException(
+                "TriangleAlert:IntradayCacheSeconds must be greater than zero.");
+        }
+
+        if (includeLive)
+        {
+            if (_triangleAlertCache.TryGetIntraday(
+                    cacheKey,
+                    intradayCacheSeconds,
+                    out var cachedIntradayResponse))
+            {
+                _logger.LogDebug(
+                    "Intraday triangle alert cache hit. " +
+                    "CacheKey: {CacheKey}, CacheSeconds: {CacheSeconds}",
+                    cacheKey,
+                    intradayCacheSeconds);
+
+                return cachedIntradayResponse;
+            }
+
+            _logger.LogDebug(
+                "Intraday triangle alert cache miss. " +
+                "CacheKey: {CacheKey}, CacheSeconds: {CacheSeconds}",
+                cacheKey,
+                intradayCacheSeconds);
+        }
+
+        // ---------------------------------------------------------
+        // START ANALYSIS
+        // ---------------------------------------------------------
+
+        _logger.LogTrace(
             "Starting triangle alert analysis. " +
             "Exchange: {Exchange}, Group: {Group}, IncludeLive: {IncludeLive}",
             exchange,
@@ -51,13 +128,7 @@ public class TriangleAlertService : ITriangleAlertService
             includeLive);
 
         // ---------------------------------------------------------
-        // Resolve group to tickers
-        //
-        // Group supplied:
-        //     Index/Sector -> List of tickers
-        //
-        // Group not supplied:
-        //     Empty ticker list -> ALL tickers
+        // RESOLVE GROUP TO TICKERS
         // ---------------------------------------------------------
 
         var tickers = new List<string>();
@@ -70,7 +141,7 @@ public class TriangleAlertService : ITriangleAlertService
                     cancellationToken);
         }
 
-        _logger.LogInformation(
+        _logger.LogTrace(
             "Ticker selection completed. " +
             "Exchange: {Exchange}, Group: {Group}, TickerCount: {TickerCount}",
             exchange,
@@ -78,14 +149,7 @@ public class TriangleAlertService : ITriangleAlertService
             tickers.Count);
 
         // ---------------------------------------------------------
-        // Get market data
-        //
-        // includeLive = false
-        //     EOD only
-        //
-        // includeLive = true
-        //     Market Open  -> EOD + Live
-        //     Market Closed -> EOD only
+        // GET MARKET DATA
         // ---------------------------------------------------------
 
         var marketData =
@@ -95,15 +159,15 @@ public class TriangleAlertService : ITriangleAlertService
                 includeLive,
                 cancellationToken);
 
+        // ---------------------------------------------------------
+        // BUILD RESPONSE
+        // ---------------------------------------------------------
+
         var response = new TriangleAlertResponse
         {
             TimeStamp = DateTime.Now,
             Exchange = exchange
         };
-
-        // ---------------------------------------------------------
-        // Latest candle date
-        // ---------------------------------------------------------
 
         var latestCandleDate = marketData
             .SelectMany(x => x.Candles)
@@ -118,7 +182,7 @@ public class TriangleAlertService : ITriangleAlertService
         }
 
         // ---------------------------------------------------------
-        // Triangle detection
+        // DETECT TRIANGLES
         // ---------------------------------------------------------
 
         foreach (var item in marketData)
@@ -132,7 +196,42 @@ public class TriangleAlertService : ITriangleAlertService
             response.Data.Add(detectionResult);
         }
 
-        _logger.LogInformation(
+        // ---------------------------------------------------------
+        // UPDATE CACHE
+        // ---------------------------------------------------------
+
+        if (!includeLive)
+        {
+            _triangleAlertCache.SetEod(
+                cacheKey,
+                response);
+
+            _logger.LogDebug(
+                "EOD triangle alert response cached. " +
+                "CacheKey: {CacheKey}, TickerCount: {TickerCount}",
+                cacheKey,
+                response.Data.Count);
+        }
+        else
+        {
+            _triangleAlertCache.SetIntraday(
+                cacheKey,
+                response);
+
+            _logger.LogDebug(
+                "Intraday triangle alert response cached. " +
+                "CacheKey: {CacheKey}, CacheSeconds: {CacheSeconds}, " +
+                "TickerCount: {TickerCount}",
+                cacheKey,
+                intradayCacheSeconds,
+                response.Data.Count);
+        }
+
+        // ---------------------------------------------------------
+        // COMPLETE
+        // ---------------------------------------------------------
+
+        _logger.LogTrace(
             "Triangle alert analysis completed. " +
             "Exchange: {Exchange}, Group: {Group}, " +
             "IncludeLive: {IncludeLive}, TickerCount: {TickerCount}",
@@ -142,5 +241,13 @@ public class TriangleAlertService : ITriangleAlertService
             response.Data.Count);
 
         return response;
+    }
+
+    private static string BuildCacheKey(
+        string exchange,
+        string? group)
+    {
+        return
+            $"{exchange}|{group?.Trim().ToUpperInvariant() ?? "ALL"}";
     }
 }

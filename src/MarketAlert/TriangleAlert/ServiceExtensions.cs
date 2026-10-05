@@ -76,6 +76,9 @@ public static class ServiceExtensions
             IMarketDataService,
             MarketDataService>();
 
+        services.AddSingleton<
+            TriangleAlertCache>();
+
         services.AddScoped<
             ITriangleAlertService,
             TriangleAlertService>();

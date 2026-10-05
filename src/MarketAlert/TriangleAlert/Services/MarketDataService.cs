@@ -50,7 +50,7 @@ public class MarketDataService : IMarketDataService
             .ToList()
             ?? new List<string>();
 
-        _logger.LogInformation(
+        _logger.LogTrace(
             "Getting market data. " +
             "Exchange: {Exchange}, TickerCount: {TickerCount}, IncludeLive: {IncludeLive}",
             exchange,
@@ -69,7 +69,7 @@ public class MarketDataService : IMarketDataService
 
         if (!includeLive)
         {
-            _logger.LogInformation(
+            _logger.LogTrace(
                 "Live data disabled. Getting EOD data only. " +
                 "Exchange: {Exchange}",
                 exchange);
@@ -97,7 +97,7 @@ public class MarketDataService : IMarketDataService
                 "CASH",
                 cancellationToken);
 
-        _logger.LogInformation(
+        _logger.LogTrace(
             "Market status for {Exchange}: {Status}, IsOpen: {IsMarketOpen}",
             exchange,
             marketStatus.Status,
@@ -135,7 +135,7 @@ public class MarketDataService : IMarketDataService
         var historicalCandleCount =
             lookbackCandles - 1;
 
-        _logger.LogInformation(
+        _logger.LogTrace(
             "Market is OPEN. Getting {HistoricalCandleCount} EOD candles + 1 live candle. " +
             "Total: {TotalCandles}. TickerCount: {TickerCount}",
             historicalCandleCount,
@@ -180,7 +180,7 @@ public class MarketDataService : IMarketDataService
                     tickerSet.Contains(x.Ticker))
                 .ToList();
 
-            _logger.LogInformation(
+            _logger.LogTrace(
                 "Filtered live quotes. " +
                 "RequestedTickerCount: {RequestedTickerCount}, " +
                 "LiveQuoteCount: {LiveQuoteCount}",
@@ -189,7 +189,7 @@ public class MarketDataService : IMarketDataService
         }
         else
         {
-            _logger.LogInformation(
+            _logger.LogTrace(
                 "No ticker filter supplied. " +
                 "Using all {LiveQuoteCount} live quotes.",
                 liveQuotes.Count);
@@ -219,7 +219,7 @@ public class MarketDataService : IMarketDataService
 
             if (liveQuote == null)
             {
-                _logger.LogWarning(
+                _logger.LogDebug(
                     "Live quote not found for {Ticker}. " +
                     "Returning historical candles only.",
                     currentTicker);
@@ -288,7 +288,7 @@ public class MarketDataService : IMarketDataService
         var lookbackCandles =
             _settings.DefaultLookbackCandles;
 
-        _logger.LogInformation(
+        _logger.LogTrace(
             "Getting EOD data. " +
             "Exchange: {Exchange}, CandleCount: {CandleCount}, " +
             "TickerCount: {TickerCount}",
