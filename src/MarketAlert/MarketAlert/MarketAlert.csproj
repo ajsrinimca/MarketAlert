@@ -28,10 +28,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="..\TriangleAlert\TriangleAlert.json"
-             Link="TriangleAlert.json"
-             CopyToOutputDirectory="PreserveNewest"
-             CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\TriangleAlert\TriangleAlert.json" Link="TriangleAlert.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
