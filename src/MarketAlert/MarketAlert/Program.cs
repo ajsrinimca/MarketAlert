@@ -37,8 +37,23 @@ builder.Host.UseNLog();
 // TriangleAlert services
 // --------------------------------------------------
 
+var nseSymbols = new List<string>
+{
+    "20MICRONS",
+    "TCS",
+    "INFY",
+    "RELIANCE"
+};
+
+var bseSymbols = new List<string>
+{
+    "20MICRONS",
+    "TCS",
+    "INFY"
+};
+
 builder.Services.AddMarketAlertService(
-    builder.Configuration);
+    builder.Configuration, nseSymbols, bseSymbols);
 
 // --------------------------------------------------
 // Controllers

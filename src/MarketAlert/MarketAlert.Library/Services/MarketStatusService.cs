@@ -1,19 +1,28 @@
 ﻿namespace MarketAlert.Library.Services;
 
-public class MarketStatusService : IMarketStatusService
+public interface IMarketStatusService
 {
-    private readonly IConfiguration _configuration;
+    Task<MarketStatus> GetMarketStatusAsync(
+        string exchange,
+        string segment,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class MarketStatusService
+    : IMarketStatusService
+{
+    private readonly IMarketTimingCache _marketTimingCache;
     private readonly ILogger<MarketStatusService> _logger;
 
     public MarketStatusService(
-        IConfiguration configuration,
+        IMarketTimingCache marketTimingCache,
         ILogger<MarketStatusService> logger)
     {
-        _configuration = configuration;
+        _marketTimingCache = marketTimingCache;
         _logger = logger;
     }
 
-    public async Task<MarketStatus> GetMarketStatusAsync(
+    public Task<MarketStatus> GetMarketStatusAsync(
         string exchange,
         string segment,
         CancellationToken cancellationToken = default)
@@ -32,39 +41,28 @@ public class MarketStatusService : IMarketStatusService
                 nameof(segment));
         }
 
-        exchange = exchange.Trim().ToUpperInvariant();
-        segment = segment.Trim().ToUpperInvariant();
+        exchange =
+            exchange.Trim().ToUpperInvariant();
 
-        var currentDateTime = DateTime.Now;
-        var currentTime = currentDateTime.TimeOfDay;
+        segment =
+            segment.Trim().ToUpperInvariant();
 
-        using var connection = new SqliteConnection(
-            _configuration.GetConnectionString("WebExpress"));
+        if (!_marketTimingCache.IsReady)
+        {
+            throw new InvalidOperationException(
+                "Market timing cache is not ready.");
+        }
 
-        await connection.OpenAsync(cancellationToken);
+        var currentDateTime =
+            DateTime.Now;
 
-        const string sql = """
-        SELECT
-            Exchange,
-            Segment,
-            Status,
-            StartTime,
-            EndTime
-        FROM Market_State_Timings
-        WHERE UPPER(Exchange) = @Exchange
-          AND UPPER(Segment) = @Segment;
-        """;
+        var currentTime =
+            currentDateTime.TimeOfDay;
 
-        var timings = (await connection.QueryAsync<MarketTiming>(
-            new CommandDefinition(
-                sql,
-                new
-                {
-                    Exchange = exchange,
-                    Segment = segment
-                },
-                cancellationToken: cancellationToken)))
-            .ToList();
+        var timings =
+            _marketTimingCache.GetTimings(
+                exchange,
+                segment);
 
         if (timings.Count == 0)
         {
@@ -77,52 +75,102 @@ public class MarketStatusService : IMarketStatusService
                 $"Market timing configuration not found for {exchange}/{segment}.");
         }
 
-        var timing = timings.FirstOrDefault(x =>
+        MarketTiming? matchingTiming = null;
+
+        foreach (var timing in timings)
         {
-            var startTime = TimeSpan.Parse(x.StartTime);
-            var endTime = TimeSpan.Parse(x.EndTime);
+            if (!TimeSpan.TryParse(
+                    timing.StartTime,
+                    out var startTime))
+            {
+                _logger.LogWarning(
+                    "Invalid StartTime '{StartTime}' for {Exchange}/{Segment}",
+                    timing.StartTime,
+                    exchange,
+                    segment);
 
-            return IsTimeInRange(
-                currentTime,
-                startTime,
-                endTime);
-        });
+                continue;
+            }
 
-        if (timing == null)
+            if (!TimeSpan.TryParse(
+                    timing.EndTime,
+                    out var endTime))
+            {
+                _logger.LogWarning(
+                    "Invalid EndTime '{EndTime}' for {Exchange}/{Segment}",
+                    timing.EndTime,
+                    exchange,
+                    segment);
+
+                continue;
+            }
+
+            if (IsTimeInRange(
+                    currentTime,
+                    startTime,
+                    endTime))
+            {
+                matchingTiming = timing;
+                break;
+            }
+        }
+
+        if (matchingTiming == null)
         {
             _logger.LogDebug(
-                "No matching market state found for {Exchange}/{Segment} at {CurrentTime}",
+                "No matching market state found for {Exchange}/{Segment} " +
+                "at {CurrentTime}",
                 exchange,
                 segment,
                 currentTime);
 
-            return new MarketStatus
-            {
-                Exchange = exchange,
-                Segment = segment,
-                Status = "CLOSE",
-                IsMarketOpen = false,
-                CurrentDateTime = currentDateTime
-            };
+            return Task.FromResult(
+                new MarketStatus
+                {
+                    Exchange = exchange,
+                    Segment = segment,
+                    Status = "CLOSE",
+                    IsMarketOpen = false,
+                    CurrentDateTime = currentDateTime
+                });
         }
 
-        var parsedStartTime = TimeSpan.Parse(timing.StartTime);
-        var parsedEndTime = TimeSpan.Parse(timing.EndTime);
+        var parsedStartTime =
+            TimeSpan.Parse(
+                matchingTiming.StartTime);
 
-        var isMarketOpen = timing.Status.Equals(
-            "OPEN",
-            StringComparison.OrdinalIgnoreCase);
+        var parsedEndTime =
+            TimeSpan.Parse(
+                matchingTiming.EndTime);
 
-        return new MarketStatus
+        var isMarketOpen =
+            matchingTiming.Status.Equals(
+                "OPEN",
+                StringComparison.OrdinalIgnoreCase);
+
+        var result = new MarketStatus
         {
-            Exchange = timing.Exchange,
-            Segment = timing.Segment,
-            Status = timing.Status,
+            Exchange = matchingTiming.Exchange,
+            Segment = matchingTiming.Segment,
+            Status = matchingTiming.Status,
             StartTime = parsedStartTime,
             EndTime = parsedEndTime,
             IsMarketOpen = isMarketOpen,
             CurrentDateTime = currentDateTime
         };
+
+        _logger.LogTrace(
+            "Market status calculated from cache. " +
+            "Exchange: {Exchange}, Segment: {Segment}, " +
+            "Status: {Status}, IsMarketOpen: {IsMarketOpen}, " +
+            "CurrentTime: {CurrentTime}",
+            exchange,
+            segment,
+            result.Status,
+            result.IsMarketOpen,
+            currentTime);
+
+        return Task.FromResult(result);
     }
 
     private static bool IsTimeInRange(

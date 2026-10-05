@@ -1,5 +1,10 @@
 ﻿namespace MarketAlert.Library.Infrastructure;
 
+public interface IDbConnectionFactory
+{
+    SqliteConnection CreateConnection(string connectionName);
+}
+
 public class SqliteConnectionFactory : IDbConnectionFactory
 {
     private readonly IConfiguration _configuration;

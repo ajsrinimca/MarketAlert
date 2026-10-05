@@ -1,22 +1,31 @@
 ﻿namespace MarketAlert.Library.Services;
 
-public class MarketDataService : IMarketDataService
+public interface IMarketDataService
+{
+    Task<List<MarketDataResult>> GetMarketDataAsync(
+        string exchange,
+        List<string>? tickers,
+        bool includeLive,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class MarketDataService : IMarketDataService
 {
     private readonly IMarketStatusService _marketStatusService;
-    private readonly IHistoricalDataRepository _historicalDataRepository;
+    private readonly IEodHistoryCache _eodHistoryCache;
     private readonly ILiveMarketDataService _liveMarketDataService;
     private readonly TriangleSettings _settings;
     private readonly ILogger<MarketDataService> _logger;
 
     public MarketDataService(
         IMarketStatusService marketStatusService,
-        IHistoricalDataRepository historicalDataRepository,
+        IEodHistoryCache eodHistoryCache,
         ILiveMarketDataService liveMarketDataService,
         IOptions<TriangleSettings> options,
         ILogger<MarketDataService> logger)
     {
         _marketStatusService = marketStatusService;
-        _historicalDataRepository = historicalDataRepository;
+        _eodHistoryCache = eodHistoryCache;
         _liveMarketDataService = liveMarketDataService;
         _settings = options.Value;
         _logger = logger;
@@ -40,7 +49,7 @@ public class MarketDataService : IMarketDataService
         var normalizedTickers = tickers?
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(x => x.Trim().ToUpperInvariant())
-            .Distinct()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList()
             ?? new List<string>();
 
@@ -57,21 +66,20 @@ public class MarketDataService : IMarketDataService
         // MarketAlert
         // includeLive = false
         //
-        // Always use EOD data.
-        // No need to check market status.
+        // Use EOD cache only.
+        // No database call.
         // ---------------------------------------------------------
 
         if (!includeLive)
         {
             _logger.LogTrace(
-                "Live data disabled. Getting EOD data only. " +
+                "Live data disabled. Using EOD history cache only. " +
                 "Exchange: {Exchange}",
                 exchange);
 
-            return await GetClosedMarketDataAsync(
+            return GetClosedMarketData(
                 exchange,
-                normalizedTickers,
-                cancellationToken);
+                normalizedTickers);
         }
 
         // ---------------------------------------------------------
@@ -81,8 +89,8 @@ public class MarketDataService : IMarketDataService
         //
         // Check market status:
         //
-        // OPEN   -> 29 EOD + 1 Live
-        // CLOSED -> 30 EOD
+        // OPEN   -> 29 EOD cached candles + 1 Live
+        // CLOSED -> 30 EOD cached candles
         // ---------------------------------------------------------
 
         var marketStatus =
@@ -105,16 +113,15 @@ public class MarketDataService : IMarketDataService
                 cancellationToken);
         }
 
-        return await GetClosedMarketDataAsync(
+        return GetClosedMarketData(
             exchange,
-            normalizedTickers,
-            cancellationToken);
+            normalizedTickers);
     }
 
     private async Task<List<MarketDataResult>> GetOpenMarketDataAsync(
         string exchange,
         List<string> tickers,
-    CancellationToken cancellationToken)
+        CancellationToken cancellationToken)
     {
         var lookbackCandles =
             _settings.DefaultLookbackCandles;
@@ -130,28 +137,34 @@ public class MarketDataService : IMarketDataService
             lookbackCandles - 1;
 
         _logger.LogTrace(
-            "Market is OPEN. Getting {HistoricalCandleCount} EOD candles + 1 live candle. " +
+            "Market is OPEN. Using {HistoricalCandleCount} cached EOD candles + 1 live candle. " +
             "Total: {TotalCandles}. TickerCount: {TickerCount}",
             historicalCandleCount,
             lookbackCandles,
             tickers.Count);
 
         // ---------------------------------------------------------
-        // Get historical candles
+        // Check EOD cache
+        // ---------------------------------------------------------
+
+        EnsureEodCacheReady();
+
+        // ---------------------------------------------------------
+        // Get historical candles from cache
+        //
+        // No database call.
+        // Cache contains up to 120 candles per ticker.
+        // We only take the latest required candles.
         // ---------------------------------------------------------
 
         var historicalData =
-            await _historicalDataRepository.GetDailyCandlesAsync(
+            GetCachedHistoricalData(
                 exchange,
                 tickers,
-                historicalCandleCount,
-                cancellationToken);
+                historicalCandleCount);
 
         // ---------------------------------------------------------
         // Get today's live data
-        //
-        // Live API returns all quotes for the exchange.
-        // We need to apply the group/ticker filter here as well.
         // ---------------------------------------------------------
 
         var liveResponse =
@@ -159,14 +172,18 @@ public class MarketDataService : IMarketDataService
                 exchange,
                 cancellationToken);
 
-        var liveQuotes = liveResponse.Quotes;
+        var liveQuotes =
+            liveResponse.Quotes;
 
-        // If tickers were supplied, filter live quotes.
-        // If tickers are empty, keep all live quotes.
+        // ---------------------------------------------------------
+        // Filter live quotes
+        // ---------------------------------------------------------
+
         if (tickers.Count > 0)
         {
-            var tickerSet = tickers
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var tickerSet =
+                tickers.ToHashSet(
+                    StringComparer.OrdinalIgnoreCase);
 
             liveQuotes = liveQuotes
                 .Where(x =>
@@ -189,24 +206,27 @@ public class MarketDataService : IMarketDataService
                 liveQuotes.Count);
         }
 
-        var result = new List<MarketDataResult>();
+        // ---------------------------------------------------------
+        // Combine EOD cache + Live
+        // ---------------------------------------------------------
 
-        // ---------------------------------------------------------
-        // Combine EOD + Live
-        // ---------------------------------------------------------
+        var result =
+            new List<MarketDataResult>();
 
         foreach (var historicalItem in historicalData)
         {
             var currentTicker =
                 historicalItem.Key;
 
-            var candles = historicalItem.Value
-                .OrderBy(x => x.Date)
-                .ToList();
+            var candles =
+                historicalItem.Value
+                    .OrderBy(x => x.Date)
+                    .ToList();
 
-            // Find corresponding live quote.
-            var liveQuote = liveQuotes
-                .FirstOrDefault(x =>
+            // Find corresponding live quote
+            var liveQuote =
+                liveQuotes.FirstOrDefault(x =>
+                    !string.IsNullOrWhiteSpace(x.Ticker) &&
                     x.Ticker.Equals(
                         currentTicker,
                         StringComparison.OrdinalIgnoreCase));
@@ -215,7 +235,7 @@ public class MarketDataService : IMarketDataService
             {
                 _logger.LogDebug(
                     "Live quote not found for {Ticker}. " +
-                    "Returning historical candles only.",
+                    "Returning cached historical candles only.",
                     currentTicker);
 
                 result.Add(new MarketDataResult
@@ -237,13 +257,15 @@ public class MarketDataService : IMarketDataService
                 SymbolId =
                     candles.FirstOrDefault()?.SymbolId ?? 0,
 
-                Token = long.TryParse(
-                    liveQuote.Token,
-                    out var token)
-                    ? token
-                    : 0,
+                Token =
+                    long.TryParse(
+                        liveQuote.Token,
+                        out var token)
+                        ? token
+                        : 0,
 
-                Date = liveResponse.LastUpdatedTime.Date,
+                Date =
+                    liveResponse.LastUpdatedTime.Date,
 
                 Open = liveQuote.Open,
                 High = liveQuote.High,
@@ -274,16 +296,15 @@ public class MarketDataService : IMarketDataService
         return result;
     }
 
-    private async Task<List<MarketDataResult>> GetClosedMarketDataAsync(
+    private List<MarketDataResult> GetClosedMarketData(
         string exchange,
-        List<string> tickers,
-        CancellationToken cancellationToken)
+        List<string> tickers)
     {
         var lookbackCandles =
             _settings.DefaultLookbackCandles;
 
         _logger.LogTrace(
-            "Getting EOD data. " +
+            "Getting EOD data from cache. " +
             "Exchange: {Exchange}, CandleCount: {CandleCount}, " +
             "TickerCount: {TickerCount}",
             exchange,
@@ -291,23 +312,30 @@ public class MarketDataService : IMarketDataService
             tickers.Count);
 
         // ---------------------------------------------------------
-        // Get EOD candles
+        // Check EOD cache
+        // ---------------------------------------------------------
+
+        EnsureEodCacheReady();
+
+        // ---------------------------------------------------------
+        // Get EOD candles from cache
         // ---------------------------------------------------------
 
         var historicalData =
-            await _historicalDataRepository.GetDailyCandlesAsync(
+            GetCachedHistoricalData(
                 exchange,
                 tickers,
-                lookbackCandles,
-                cancellationToken);
+                lookbackCandles);
 
-        var result = new List<MarketDataResult>();
+        var result =
+            new List<MarketDataResult>();
 
         foreach (var item in historicalData)
         {
-            var candles = item.Value
-                .OrderBy(x => x.Date)
-                .ToList();
+            var candles =
+                item.Value
+                    .OrderBy(x => x.Date)
+                    .ToList();
 
             result.Add(new MarketDataResult
             {
@@ -318,5 +346,82 @@ public class MarketDataService : IMarketDataService
         }
 
         return result;
+    }
+
+    // ---------------------------------------------------------
+    // Get historical data from the EOD cache
+    // ---------------------------------------------------------
+
+    private Dictionary<string, List<MarketCandle>>
+        GetCachedHistoricalData(
+            string exchange,
+            List<string> tickers,
+            int candleCount)
+    {
+        var cachedHistory =
+            _eodHistoryCache.GetHistory(exchange);
+
+        if (cachedHistory.Count == 0)
+        {
+            _logger.LogWarning(
+                "No EOD history found in cache. " +
+                "Exchange: {Exchange}",
+                exchange);
+
+            return new Dictionary<string, List<MarketCandle>>(
+                StringComparer.OrdinalIgnoreCase);
+        }
+
+        // ---------------------------------------------------------
+        // No ticker filter
+        //
+        // Use all cached symbols.
+        // ---------------------------------------------------------
+
+        if (tickers.Count == 0)
+        {
+            return cachedHistory
+                .ToDictionary(
+                    x => x.Key,
+                    x => x.Value
+                        .OrderByDescending(c => c.Date)
+                        .Take(candleCount)
+                        .OrderBy(c => c.Date)
+                        .ToList(),
+                    StringComparer.OrdinalIgnoreCase);
+        }
+
+        // ---------------------------------------------------------
+        // Filter cached data by requested tickers
+        // ---------------------------------------------------------
+
+        var tickerSet =
+            tickers.ToHashSet(
+                StringComparer.OrdinalIgnoreCase);
+
+        return cachedHistory
+            .Where(x => tickerSet.Contains(x.Key))
+            .ToDictionary(
+                x => x.Key,
+                x => x.Value
+                    .OrderByDescending(c => c.Date)
+                    .Take(candleCount)
+                    .OrderBy(c => c.Date)
+                    .ToList(),
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    // ---------------------------------------------------------
+    // Make sure startup cache loading completed
+    // ---------------------------------------------------------
+
+    private void EnsureEodCacheReady()
+    {
+        if (!_eodHistoryCache.IsReady)
+        {
+            throw new InvalidOperationException(
+                "EOD history cache is not ready. " +
+                "The application startup cache warm-up may not have completed.");
+        }
     }
 }

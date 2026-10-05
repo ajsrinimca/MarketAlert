@@ -1,5 +1,12 @@
 ﻿namespace MarketAlert.Library.Repositories;
 
+public interface IMarketSymbolRepository
+{
+    Task<List<string>> GetTickersByGroupAsync(
+        string group,
+        CancellationToken cancellationToken = default);
+}
+
 public class MarketSymbolRepository : IMarketSymbolRepository
 {
     private readonly IDbConnectionFactory _connectionFactory;

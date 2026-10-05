@@ -1,70 +1,63 @@
 ﻿namespace MarketAlert.Library.Repositories;
 
-public class SegmentRepository : ISegmentRepository
+public interface ISegmentRepository
 {
-    private readonly IConfiguration _configuration;
+    Task<List<SegmentPrecision>> GetAllPrecisionsAsync(
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class SegmentRepository : ISegmentRepository
+{
+    private readonly IDbConnectionFactory _connectionFactory;
     private readonly ILogger<SegmentRepository> _logger;
 
     public SegmentRepository(
-        IConfiguration configuration,
+        IDbConnectionFactory connectionFactory,
         ILogger<SegmentRepository> logger)
     {
-        _configuration = configuration;
+        _connectionFactory = connectionFactory;
         _logger = logger;
     }
 
-    public async Task<int> GetPrecisionAsync(
-        string segmentCode,
+    public async Task<List<SegmentPrecision>> GetAllPrecisionsAsync(
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(segmentCode))
-        {
-            throw new ArgumentException(
-                "Segment code is required.",
-                nameof(segmentCode));
-        }
-
-        var connectionString =
-            _configuration.GetConnectionString("WebExpress");
-
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            throw new InvalidOperationException(
-                "WebExpress connection string is not configured.");
-        }
-
         await using var connection =
-            new SqliteConnection(connectionString);
+            _connectionFactory.CreateConnection(
+                DatabaseConstants.WebExpress);
 
         await connection.OpenAsync(cancellationToken);
 
         const string sql = """
-            SELECT precision
+            SELECT
+                segment_code AS SegmentCode,
+                precision AS Precision
             FROM mastersegment
-            WHERE segment_code = @SegmentCode
-            LIMIT 1;
+            WHERE segment_code IS NOT NULL;
             """;
 
-        await using var command =
-            new SqliteCommand(sql, connection);
+        var result =
+            await connection.QueryAsync<SegmentPrecision>(
+                new CommandDefinition(
+                    sql,
+                    cancellationToken: cancellationToken));
 
-        command.Parameters.AddWithValue(
-            "@SegmentCode",
-            segmentCode.Trim().ToUpperInvariant());
+        var segments = result
+            .Where(x => !string.IsNullOrWhiteSpace(x.SegmentCode))
+            .ToList();
 
-        var result = await command.ExecuteScalarAsync(
-            cancellationToken);
+        _logger.LogInformation(
+            "Loaded segment precision configuration. " +
+            "SegmentCount: {SegmentCount}",
+            segments.Count);
 
-        if (result == null || result == DBNull.Value)
-        {
-            _logger.LogDebug(
-                "Precision not found for segment code: {SegmentCode}",
-                segmentCode);
-
-            throw new InvalidOperationException(
-                $"Precision not found for segment '{segmentCode}'.");
-        }
-
-        return Convert.ToInt32(result);
+        return segments;
     }
+}
+
+public sealed class SegmentPrecision
+{
+    public string SegmentCode { get; init; } = string.Empty;
+
+    public int Precision { get; init; }
 }

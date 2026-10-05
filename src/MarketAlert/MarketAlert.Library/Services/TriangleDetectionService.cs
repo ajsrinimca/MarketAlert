@@ -1,5 +1,13 @@
 ﻿namespace MarketAlert.Library.Services;
 
+public interface ITriangleDetectionService
+{
+    TriangleAlertItem Detect(
+        string ticker,
+        long token,
+        List<MarketCandle> candles);
+}
+
 public class TriangleDetectionService : ITriangleDetectionService
 {
     private readonly ISwingPointService _swingPointService;

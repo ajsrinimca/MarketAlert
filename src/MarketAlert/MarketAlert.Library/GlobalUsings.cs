@@ -1,8 +1,8 @@
 ﻿global using Dapper;
+global using MarketAlert.Library.Caching;
 global using MarketAlert.Library.Configuration;
 global using MarketAlert.Library.Constants;
 global using MarketAlert.Library.Infrastructure;
-global using MarketAlert.Library.Interfaces;
 global using MarketAlert.Library.Models;
 global using MarketAlert.Library.Repositories;
 global using MarketAlert.Library.Services;
@@ -13,6 +13,7 @@ global using Microsoft.AspNetCore.Routing;
 global using Microsoft.Data.Sqlite;
 global using Microsoft.Extensions.Configuration;
 global using Microsoft.Extensions.DependencyInjection;
+global using Microsoft.Extensions.Hosting;
 global using Microsoft.Extensions.Logging;
 global using Microsoft.Extensions.Options;
 global using System.Net.Http.Json;

@@ -1,13 +1,23 @@
 ﻿namespace MarketAlert.Library.Repositories;
 
-public class HistoricalDataRepository : IHistoricalDataRepository
+public interface IEodHistoricalDataRepository
+{
+    Task<Dictionary<string, List<MarketCandle>>> GetDailyCandlesAsync(
+        string exchange,
+        IReadOnlyList<string> tickers,
+        int candleCount,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class EodHistoricalDataRepository
+    : IEodHistoricalDataRepository
 {
     private readonly IDbConnectionFactory _connectionFactory;
-    private readonly ILogger<HistoricalDataRepository> _logger;
+    private readonly ILogger<EodHistoricalDataRepository> _logger;
 
-    public HistoricalDataRepository(
+    public EodHistoricalDataRepository(
         IDbConnectionFactory connectionFactory,
-        ILogger<HistoricalDataRepository> logger)
+        ILogger<EodHistoricalDataRepository> logger)
     {
         _connectionFactory = connectionFactory;
         _logger = logger;
@@ -15,7 +25,7 @@ public class HistoricalDataRepository : IHistoricalDataRepository
 
     public async Task<Dictionary<string, List<MarketCandle>>> GetDailyCandlesAsync(
         string exchange,
-        List<string>? tickers,
+        IReadOnlyList<string> tickers,
         int candleCount,
         CancellationToken cancellationToken = default)
     {
@@ -26,6 +36,13 @@ public class HistoricalDataRepository : IHistoricalDataRepository
                 nameof(exchange));
         }
 
+        if (tickers == null || tickers.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one ticker is required.",
+                nameof(tickers));
+        }
+
         if (candleCount <= 0)
         {
             throw new ArgumentException(
@@ -33,7 +50,10 @@ public class HistoricalDataRepository : IHistoricalDataRepository
                 nameof(candleCount));
         }
 
-        var exchangeId = exchange.Trim().ToUpperInvariant() switch
+        var normalizedExchange =
+            exchange.Trim().ToUpperInvariant();
+
+        var exchangeId = normalizedExchange switch
         {
             "NSE" => 1,
             "BSE" => 2,
@@ -43,12 +63,18 @@ public class HistoricalDataRepository : IHistoricalDataRepository
                 nameof(exchange))
         };
 
-        var normalizedTickers = tickers?
+        var normalizedTickers = tickers
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(x => x.Trim().ToUpperInvariant())
             .Distinct()
-            .ToList()
-            ?? new List<string>();
+            .ToList();
+
+        if (normalizedTickers.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one valid ticker is required.",
+                nameof(tickers));
+        }
 
         await using var connection =
             _connectionFactory.CreateConnection(
@@ -75,10 +101,7 @@ public class HistoricalDataRepository : IHistoricalDataRepository
               AND s.Segment = 1
               AND h.BarTypeId = 1
               AND d.BarTypeId = 1
-              AND (
-                    @HasTickers = 0
-                    OR s.Ticker IN @Tickers
-                  )
+              AND s.Ticker IN @Tickers
             ORDER BY s.Ticker, d.Date DESC;
             """;
 
@@ -88,13 +111,6 @@ public class HistoricalDataRepository : IHistoricalDataRepository
                 new
                 {
                     Exchange = exchangeId,
-
-                    // 0 = get all tickers
-                    // 1 = filter using Tickers
-                    HasTickers = normalizedTickers.Count > 0
-                        ? 1
-                        : 0,
-
                     Tickers = normalizedTickers
                 },
                 cancellationToken: cancellationToken));
@@ -117,17 +133,37 @@ public class HistoricalDataRepository : IHistoricalDataRepository
                         Close = x.Close,
                         Volume = x.Volume
                     })
-                    .ToList());
+                    .ToList(),
+                StringComparer.OrdinalIgnoreCase);
 
-        _logger.LogTrace(
-            "Retrieved historical data for {TickerCount} ticker(s). " +
-            "Exchange: {Exchange}, CandleCount: {CandleCount}, " +
-            "TickerFilterApplied: {TickerFilterApplied}",
+        _logger.LogInformation(
+            "Retrieved EOD historical data. " +
+            "Exchange: {Exchange}, RequestedTickers: {RequestedTickerCount}, " +
+            "FoundTickers: {FoundTickerCount}, CandleCount: {CandleCount}",
+            normalizedExchange,
+            normalizedTickers.Count,
             result.Count,
-            exchange,
-            candleCount,
-            normalizedTickers.Count > 0);
+            candleCount);
 
         return result;
+    }
+
+    private sealed class HistoricalCandleRow
+    {
+        public int SymbolId { get; init; }
+
+        public string Ticker { get; init; } = string.Empty;
+
+        public DateTime Date { get; init; }
+
+        public decimal Open { get; init; }
+
+        public decimal High { get; init; }
+
+        public decimal Low { get; init; }
+
+        public decimal Close { get; init; }
+
+        public long Volume { get; init; }
     }
 }

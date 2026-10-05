@@ -1,5 +1,18 @@
 ﻿namespace MarketAlert.Library.Services;
 
+public interface ISwingPointService
+{
+    List<SwingPoint> FindSwingHighs(
+        List<MarketCandle> candles,
+        int leftBars,
+        int rightBars);
+
+    List<SwingPoint> FindSwingLows(
+        List<MarketCandle> candles,
+        int leftBars,
+        int rightBars);
+}
+
 public class SwingPointService : ISwingPointService
 {
     public List<SwingPoint> FindSwingHighs(
