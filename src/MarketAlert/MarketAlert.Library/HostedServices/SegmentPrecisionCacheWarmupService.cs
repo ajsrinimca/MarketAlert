@@ -20,7 +20,7 @@ public sealed class SegmentPrecisionCacheWarmupService
     public async Task StartAsync(
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation(
+        _logger.LogTrace(
             "Starting segment precision cache warm-up...");
 
         try
@@ -46,7 +46,7 @@ public sealed class SegmentPrecisionCacheWarmupService
 
             _cache.MarkReady();
 
-            _logger.LogInformation(
+            _logger.LogTrace(
                 "Segment precision cache warm-up completed. " +
                 "SegmentCount: {SegmentCount}",
                 segments.Count);

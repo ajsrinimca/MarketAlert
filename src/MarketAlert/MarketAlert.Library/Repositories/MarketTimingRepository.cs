@@ -23,35 +23,93 @@ public sealed class MarketTimingRepository
     public async Task<List<MarketTiming>> GetMarketTimingsAsync(
         CancellationToken cancellationToken = default)
     {
-        await using var connection =
-            _connectionFactory.CreateConnection(
-                DatabaseConstants.WebExpress);
+        var startTime = DateTime.Now;
+        var stopwatch = Stopwatch.StartNew();
 
-        await connection.OpenAsync(cancellationToken);
+        _logger.LogTrace(
+            "Market timing database call started. " +
+            "StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}",
+            startTime);
 
-        const string sql = """
-            SELECT
-                Exchange,
-                Segment,
-                Status,
-                StartTime,
-                EndTime
-            FROM Market_State_Timings;
-            """;
+        try
+        {
+            await using var connection =
+                _connectionFactory.CreateConnection(
+                    DatabaseConstants.WebExpress);
 
-        var timings =
-            await connection.QueryAsync<MarketTiming>(
-                new CommandDefinition(
-                    sql,
-                    cancellationToken: cancellationToken));
+            await connection.OpenAsync(cancellationToken);
 
-        var result = timings.ToList();
+            const string sql = """
+                SELECT
+                    Exchange,
+                    Segment,
+                    Status,
+                    StartTime,
+                    EndTime
+                FROM Market_State_Timings;
+                """;
 
-        _logger.LogInformation(
-            "Loaded market timing configuration. " +
-            "TimingCount: {TimingCount}",
-            result.Count);
+            var result =
+                (await connection.QueryAsync<MarketTiming>(
+                    new CommandDefinition(
+                        sql,
+                        cancellationToken: cancellationToken)))
+                .ToList();
 
-        return result;
+            stopwatch.Stop();
+
+            var endTime = DateTime.Now;
+
+            _logger.LogTrace(
+                "Market timing database call completed. " +
+                "StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}, " +
+                "EndTime: {EndTime:yyyy-MM-dd HH:mm:ss.fff}, " +
+                "ResponseTime: {ResponseTimeMs} ms, " +
+                "RowsReturned: {RowsReturned}",
+                startTime,
+                endTime,
+                stopwatch.ElapsedMilliseconds,
+                result.Count);
+
+            // ---------------------------------------------------------
+            // Log actual database response
+            // ---------------------------------------------------------
+
+            foreach (var timing in result)
+            {
+                _logger.LogTrace(
+                    "Market timing response. " +
+                    "Exchange: {Exchange}, " +
+                    "Segment: {Segment}, " +
+                    "Status: {Status}, " +
+                    "StartTime: {StartTime}, " +
+                    "EndTime: {EndTime}",
+                    timing.Exchange,
+                    timing.Segment,
+                    timing.Status,
+                    timing.StartTime,
+                    timing.EndTime);
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+
+            var endTime = DateTime.Now;
+
+            _logger.LogError(
+                ex,
+                "Market timing database call failed. " +
+                "StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}, " +
+                "EndTime: {EndTime:yyyy-MM-dd HH:mm:ss.fff}, " +
+                "ResponseTime: {ResponseTimeMs} ms",
+                startTime,
+                endTime,
+                stopwatch.ElapsedMilliseconds);
+
+            throw;
+        }
     }
 }

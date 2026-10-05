@@ -20,7 +20,7 @@ public sealed class MarketTimingCacheWarmupService
     public async Task StartAsync(
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation(
+        _logger.LogTrace(
             "Starting market timing cache warm-up...");
 
         try
@@ -46,7 +46,7 @@ public sealed class MarketTimingCacheWarmupService
 
             _cache.MarkReady();
 
-            _logger.LogInformation(
+            _logger.LogTrace(
                 "Market timing cache warm-up completed. " +
                 "TimingCount: {TimingCount}",
                 timings.Count);

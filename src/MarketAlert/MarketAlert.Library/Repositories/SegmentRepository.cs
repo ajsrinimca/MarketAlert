@@ -6,7 +6,8 @@ public interface ISegmentRepository
         CancellationToken cancellationToken = default);
 }
 
-public sealed class SegmentRepository : ISegmentRepository
+public sealed class SegmentRepository
+    : ISegmentRepository
 {
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly ILogger<SegmentRepository> _logger;
@@ -22,36 +23,87 @@ public sealed class SegmentRepository : ISegmentRepository
     public async Task<List<SegmentPrecision>> GetAllPrecisionsAsync(
         CancellationToken cancellationToken = default)
     {
-        await using var connection =
-            _connectionFactory.CreateConnection(
-                DatabaseConstants.WebExpress);
+        var startTime = DateTime.Now;
+        var stopwatch = Stopwatch.StartNew();
 
-        await connection.OpenAsync(cancellationToken);
+        _logger.LogTrace(
+            "Segment precision database call started. " +
+            "StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}",
+            startTime);
 
-        const string sql = """
-            SELECT
-                segment_code AS SegmentCode,
-                precision AS Precision
-            FROM mastersegment
-            WHERE segment_code IS NOT NULL;
-            """;
+        try
+        {
+            await using var connection =
+                _connectionFactory.CreateConnection(
+                    DatabaseConstants.WebExpress);
 
-        var result =
-            await connection.QueryAsync<SegmentPrecision>(
-                new CommandDefinition(
-                    sql,
-                    cancellationToken: cancellationToken));
+            await connection.OpenAsync(cancellationToken);
 
-        var segments = result
-            .Where(x => !string.IsNullOrWhiteSpace(x.SegmentCode))
-            .ToList();
+            const string sql = """
+                SELECT
+                    segment_code AS SegmentCode,
+                    precision AS Precision
+                FROM mastersegment
+                WHERE segment_code IS NOT NULL
+                ORDER BY segment_code;
+                """;
 
-        _logger.LogInformation(
-            "Loaded segment precision configuration. " +
-            "SegmentCount: {SegmentCount}",
-            segments.Count);
+            var result =
+                (await connection.QueryAsync<SegmentPrecision>(
+                    new CommandDefinition(
+                        sql,
+                        cancellationToken: cancellationToken)))
+                .ToList();
 
-        return segments;
+            stopwatch.Stop();
+
+            var endTime = DateTime.Now;
+
+            _logger.LogTrace(
+                "Segment precision database call completed. " +
+                "StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}, " +
+                "EndTime: {EndTime:yyyy-MM-dd HH:mm:ss.fff}, " +
+                "ResponseTime: {ResponseTimeMs} ms, " +
+                "RowsReturned: {RowsReturned}",
+                startTime,
+                endTime,
+                stopwatch.ElapsedMilliseconds,
+                result.Count);
+
+            // ---------------------------------------------------------
+            // Log actual database response
+            // ---------------------------------------------------------
+
+            foreach (var segment in result)
+            {
+                _logger.LogTrace(
+                    "Segment precision response. " +
+                    "SegmentCode: {SegmentCode}, " +
+                    "Precision: {Precision}",
+                    segment.SegmentCode,
+                    segment.Precision);
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+
+            var endTime = DateTime.Now;
+
+            _logger.LogError(
+                ex,
+                "Segment precision database call failed. " +
+                "StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}, " +
+                "EndTime: {EndTime:yyyy-MM-dd HH:mm:ss.fff}, " +
+                "ResponseTime: {ResponseTimeMs} ms",
+                startTime,
+                endTime,
+                stopwatch.ElapsedMilliseconds);
+
+            throw;
+        }
     }
 }
 

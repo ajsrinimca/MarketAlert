@@ -29,7 +29,7 @@ public sealed class EodHistoricalDataService
     public async Task LoadHistoryToCacheAsync(
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation(
+        _logger.LogTrace(
             "Starting EOD history cache warm-up. " +
             "NSE symbols: {NseCount}, BSE symbols: {BseCount}, " +
             "Candle count: {CandleCount}",
@@ -50,7 +50,7 @@ public sealed class EodHistoricalDataService
                 "NSE",
                 nseHistory);
 
-            _logger.LogInformation(
+            _logger.LogTrace(
                 "NSE EOD history cached. " +
                 "Ticker count: {TickerCount}",
                 nseHistory.Count);
@@ -69,7 +69,7 @@ public sealed class EodHistoricalDataService
                 "BSE",
                 bseHistory);
 
-            _logger.LogInformation(
+            _logger.LogTrace(
                 "BSE EOD history cached. " +
                 "Ticker count: {TickerCount}",
                 bseHistory.Count);
@@ -77,7 +77,7 @@ public sealed class EodHistoricalDataService
 
         _cache.MarkReady();
 
-        _logger.LogInformation(
+        _logger.LogTrace(
             "EOD history cache warm-up completed successfully.");
     }
 }

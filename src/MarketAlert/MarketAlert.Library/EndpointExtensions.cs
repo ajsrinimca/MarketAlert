@@ -2,7 +2,7 @@
 
 public static class EndpointExtension
 {
-    public static IEndpointRouteBuilder MapTriangleAlert(
+    public static IEndpointRouteBuilder MapMarketAlert(
         this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup(
