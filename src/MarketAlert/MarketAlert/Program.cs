@@ -1,7 +1,7 @@
+using MarketAlert.Library;
 using NLog;
 using NLog.Config;
 using NLog.Web;
-using TriangleAlert;
 
 var builder = WebApplication.CreateBuilder(args);
 

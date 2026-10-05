@@ -14,14 +14,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\TriangleAlert\TriangleAlert.csproj" />
+    <ProjectReference Include="..\MarketAlert.Library\MarketAlert.Library.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <Content Update="nlog.config">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Update="TriangleAlert.json">
+    <Content Update="MarketAlert.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
