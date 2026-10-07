@@ -10,23 +10,23 @@ public interface ILiveMarketDataService
 public sealed class LiveMarketDataService
     : ILiveMarketDataService
 {
-    private static readonly TimeSpan CacheExpiration =
-        TimeSpan.FromMinutes(15);
-
     private readonly HttpClient _httpClient;
     private readonly ISegmentPrecisionCache _segmentPrecisionCache;
     private readonly ILiveMarketResponseCache _liveMarketResponseCache;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<LiveMarketDataService> _logger;
 
     public LiveMarketDataService(
         HttpClient httpClient,
         ISegmentPrecisionCache segmentPrecisionCache,
         ILiveMarketResponseCache liveMarketResponseCache,
+        IConfiguration configuration,
         ILogger<LiveMarketDataService> logger)
     {
         _httpClient = httpClient;
         _segmentPrecisionCache = segmentPrecisionCache;
         _liveMarketResponseCache = liveMarketResponseCache;
+        _configuration = configuration;
         _logger = logger;
     }
 
@@ -34,18 +34,26 @@ public sealed class LiveMarketDataService
         string exchange,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(exchange))
+        // ---------------------------------------------------------
+        // Read cache duration from configuration
+        // ---------------------------------------------------------
+
+        var cacheMinutes =
+            _configuration.GetValue(
+                "LiveMarket:IntradayCacheMinutes",
+                15);
+
+        if (cacheMinutes <= 0)
         {
-            throw new ArgumentException(
-                "Exchange is required.",
-                nameof(exchange));
+            throw new InvalidOperationException(
+                "LiveMarket:IntradayCacheMinutes must be greater than zero.");
         }
 
-        exchange =
-            exchange.Trim().ToUpperInvariant();
+        var cacheExpiration =
+            TimeSpan.FromMinutes(cacheMinutes);
 
         // ---------------------------------------------------------
-        // LIVE RESPONSE CACHE
+        // Check live response cache
         // ---------------------------------------------------------
 
         if (_liveMarketResponseCache.TryGet(
@@ -53,121 +61,167 @@ public sealed class LiveMarketDataService
                 out var cachedResponse))
         {
             _logger.LogTrace(
-                "Live market response cache hit. " +
-                "Exchange: {Exchange}",
-                exchange);
+                "Live market cache hit. " +
+                "Exchange: {Exchange}, CacheMinutes: {CacheMinutes}",
+                exchange,
+                cacheMinutes);
 
             return cachedResponse;
         }
 
         _logger.LogTrace(
-            "Live market response cache miss. " +
+            "Live market cache miss. " +
             "Exchange: {Exchange}",
             exchange);
 
         // ---------------------------------------------------------
-        // LIVE API
+        // Live API
         // ---------------------------------------------------------
 
         var url =
             $"api/Quotes/equity/{exchange}";
 
+        var startTime =
+            DateTime.Now;
+
+        var stopwatch =
+            Stopwatch.StartNew();
+
         _logger.LogTrace(
-            "Fetching live market data. " +
-            "Exchange: {Exchange}",
-            exchange);
+            "Live market API call started. " +
+            "Exchange: {Exchange}, StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}",
+            exchange,
+            startTime);
 
-        using var response =
-            await _httpClient.GetAsync(
-                url,
-                cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            _logger.LogError(
-                "Live market API failed. " +
-                "Exchange: {Exchange}, StatusCode: {StatusCode}",
+            using var response =
+                await _httpClient.GetAsync(
+                    url,
+                    cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                stopwatch.Stop();
+
+                _logger.LogDebug(
+                    "Live market API returned unsuccessful status. " +
+                    "Exchange: {Exchange}, StatusCode: {StatusCode}, " +
+                    "ResponseTime: {ResponseTimeMs} ms",
+                    exchange,
+                    (int)response.StatusCode,
+                    stopwatch.ElapsedMilliseconds);
+
+                response.EnsureSuccessStatusCode();
+            }
+
+            var result =
+                await response.Content.ReadFromJsonAsync<LiveMarketResponse>(
+                    cancellationToken: cancellationToken);
+
+            if (result == null)
+            {
+                throw new InvalidOperationException(
+                    "Live market API returned an empty response.");
+            }
+
+            stopwatch.Stop();
+
+            var endTime =
+                DateTime.Now;
+
+            _logger.LogTrace(
+                "Live market API call completed. " +
+                "Exchange: {Exchange}, StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}, " +
+                "EndTime: {EndTime:yyyy-MM-dd HH:mm:ss.fff}, " +
+                "ResponseTime: {ResponseTimeMs} ms, " +
+                "QuoteCount: {QuoteCount}",
                 exchange,
-                response.StatusCode);
+                startTime,
+                endTime,
+                stopwatch.ElapsedMilliseconds,
+                result.Quotes.Count);
 
-            response.EnsureSuccessStatusCode();
+            // -----------------------------------------------------
+            // Get segment precision from startup cache
+            // -----------------------------------------------------
+
+            if (!_segmentPrecisionCache.IsReady)
+            {
+                throw new InvalidOperationException(
+                    "Segment precision cache is not ready.");
+            }
+
+            var segmentCode = exchange switch
+            {
+                "NSE" => "NSEEQ",
+                "BSE" => "BSEEQ",
+
+                _ => throw new InvalidOperationException(
+                    $"Unsupported exchange: {exchange}")
+            };
+
+            var precision =
+                _segmentPrecisionCache.GetPrecision(
+                    segmentCode);
+
+            var divisor =
+                (decimal)Math.Pow(
+                    10,
+                    precision);
+
+            _logger.LogTrace(
+                "Applying price precision. " +
+                "Exchange: {Exchange}, Segment: {SegmentCode}, " +
+                "Precision: {Precision}, Divisor: {Divisor}",
+                exchange,
+                segmentCode,
+                precision,
+                divisor);
+
+            // -----------------------------------------------------
+            // Apply precision
+            // -----------------------------------------------------
+
+            foreach (var quote in result.Quotes)
+            {
+                quote.Open /= divisor;
+                quote.High /= divisor;
+                quote.Low /= divisor;
+                quote.LastPrice /= divisor;
+            }
+
+            // -----------------------------------------------------
+            // Cache final processed response
+            // -----------------------------------------------------
+
+            _liveMarketResponseCache.Set(
+                exchange,
+                result,
+                cacheExpiration);
+
+            _logger.LogTrace(
+                "Live market response cached. " +
+                "Exchange: {Exchange}, QuoteCount: {QuoteCount}, " +
+                "CacheMinutes: {CacheMinutes}",
+                exchange,
+                result.Quotes.Count,
+                cacheMinutes);
+
+            return result;
         }
-
-        var result =
-            await response.Content.ReadFromJsonAsync<LiveMarketResponse>(
-                cancellationToken: cancellationToken);
-
-        if (result == null)
+        catch (Exception ex)
         {
-            throw new InvalidOperationException(
-                "Live market API returned an empty response.");
+            stopwatch.Stop();
+
+            _logger.LogDebug(
+                ex,
+                "Live market API request failed. " +
+                "Exchange: {Exchange}, ResponseTime: {ResponseTimeMs} ms",
+                exchange,
+                stopwatch.ElapsedMilliseconds);
+
+            throw;
         }
-
-        // ---------------------------------------------------------
-        // GET SEGMENT PRECISION FROM CACHE
-        // ---------------------------------------------------------
-
-        if (!_segmentPrecisionCache.IsReady)
-        {
-            throw new InvalidOperationException(
-                "Segment precision cache is not ready.");
-        }
-
-        var segmentCode = exchange switch
-        {
-            "NSE" => "NSEEQ",
-            "BSE" => "BSEEQ",
-
-            _ => throw new InvalidOperationException(
-                $"Unsupported exchange: {exchange}")
-        };
-
-        var precision =
-            _segmentPrecisionCache.GetPrecision(
-                segmentCode);
-
-        var divisor =
-            (decimal)Math.Pow(
-                10,
-                precision);
-
-        _logger.LogTrace(
-            "Applying price precision. " +
-            "Segment: {SegmentCode}, Precision: {Precision}, " +
-            "Divisor: {Divisor}",
-            segmentCode,
-            precision,
-            divisor);
-
-        // ---------------------------------------------------------
-        // APPLY PRECISION
-        // ---------------------------------------------------------
-
-        foreach (var quote in result.Quotes)
-        {
-            quote.Open /= divisor;
-            quote.High /= divisor;
-            quote.Low /= divisor;
-            quote.LastPrice /= divisor;
-        }
-
-        // ---------------------------------------------------------
-        // CACHE LIVE RESPONSE
-        // ---------------------------------------------------------
-
-        _liveMarketResponseCache.Set(
-            exchange,
-            result,
-            CacheExpiration);
-
-        _logger.LogTrace(
-            "Live market response cached. " +
-            "Exchange: {Exchange}, QuoteCount: {QuoteCount}, " +
-            "CacheExpirationMinutes: {CacheExpirationMinutes}",
-            exchange,
-            result.Quotes.Count,
-            CacheExpiration.TotalMinutes);
-
-        return result;
     }
 }

@@ -37,6 +37,12 @@ public sealed class MarketDataService : IMarketDataService
         bool includeLive,
         CancellationToken cancellationToken = default)
     {
+        var stopwatch = Stopwatch.StartNew();
+
+        // ---------------------------------------------------------
+        // VALIDATE EXCHANGE
+        // ---------------------------------------------------------
+
         if (string.IsNullOrWhiteSpace(exchange))
         {
             throw new ArgumentException(
@@ -44,127 +50,568 @@ public sealed class MarketDataService : IMarketDataService
                 nameof(exchange));
         }
 
-        exchange = exchange.Trim().ToUpperInvariant();
+        exchange =
+            exchange.Trim().ToUpperInvariant();
 
-        var normalizedTickers = tickers?
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => x.Trim().ToUpperInvariant())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList()
-            ?? new List<string>();
-
-        _logger.LogTrace(
-            "Getting market data. " +
-            "Exchange: {Exchange}, TickerCount: {TickerCount}, IncludeLive: {IncludeLive}",
-            exchange,
-            normalizedTickers.Count,
-            includeLive);
+        cancellationToken.ThrowIfCancellationRequested();
 
         // ---------------------------------------------------------
-        // EOD endpoint
+        // READ LOOKBACK CONFIGURATION
+        // ---------------------------------------------------------
+
+        var lookbackCandles =
+            _settings.DefaultLookbackCandles;
+
+        if (lookbackCandles <= 0)
+        {
+            throw new InvalidOperationException(
+                "Triangle:DefaultLookbackCandles must be greater than zero.");
+        }
+
+        _logger.LogTrace(
+            "Market data retrieval started. " +
+            "Exchange: {Exchange}, IncludeLive: {IncludeLive}, " +
+            "RequestedTickerFilter: {HasTickerFilter}, " +
+            "LookbackCandles: {LookbackCandles}",
+            exchange,
+            includeLive,
+            tickers != null,
+            lookbackCandles);
+
+        // ---------------------------------------------------------
+        // RESOLVE TICKER UNIVERSE
+        // ---------------------------------------------------------
+
+        List<string> requestedTickers;
+
+        if (tickers == null)
+        {
+            if (!_eodHistoryCache.IsReady)
+            {
+                throw new InvalidOperationException(
+                    "EOD history cache is not ready.");
+            }
+
+            var exchangeHistory =
+                _eodHistoryCache.GetHistory(exchange);
+
+            requestedTickers =
+                exchangeHistory
+                    .Keys
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Select(x => x.Trim().ToUpperInvariant())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+            _logger.LogTrace(
+                "Ticker universe resolved from EOD cache. " +
+                "Exchange: {Exchange}, TickerCount: {TickerCount}",
+                exchange,
+                requestedTickers.Count);
+        }
+        else
+        {
+            requestedTickers =
+                tickers
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Select(x => x.Trim().ToUpperInvariant())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+            _logger.LogTrace(
+                "Ticker universe resolved from request. " +
+                "Exchange: {Exchange}, TickerCount: {TickerCount}",
+                exchange,
+                requestedTickers.Count);
+        }
+
+        if (requestedTickers.Count == 0)
+        {
+            stopwatch.Stop();
+
+            _logger.LogTrace(
+                "Market data retrieval completed with no tickers. " +
+                "Exchange: {Exchange}, IncludeLive: {IncludeLive}, " +
+                "ElapsedMs: {ElapsedMs}",
+                exchange,
+                includeLive,
+                stopwatch.ElapsedMilliseconds);
+
+            return new List<MarketDataResult>();
+        }
+
+        // ---------------------------------------------------------
+        // EOD REQUEST
+        // ---------------------------------------------------------
         //
-        // MarketAlert
-        // includeLive = false
-        //
-        // Use EOD cache only.
-        // No database call.
+        // When includeLive = false:
+        // - No market status call
+        // - No live API call
+        // - EOD cache only
         // ---------------------------------------------------------
 
         if (!includeLive)
         {
             _logger.LogTrace(
-                "Live data disabled. Using EOD history cache only. " +
-                "Exchange: {Exchange}",
-                exchange);
-
-            return GetClosedMarketData(
+                "Using EOD-only market data path. " +
+                "Exchange: {Exchange}, TickerCount: {TickerCount}",
                 exchange,
-                normalizedTickers);
+                requestedTickers.Count);
+
+            var eodResult =
+                GetClosedMarketData(
+                    exchange,
+                    requestedTickers,
+                    lookbackCandles);
+
+            stopwatch.Stop();
+
+            _logger.LogTrace(
+                "Market data retrieval completed. " +
+                "Exchange: {Exchange}, IncludeLive: {IncludeLive}, " +
+                "TickerCount: {TickerCount}, ResultCount: {ResultCount}, " +
+                "ElapsedMs: {ElapsedMs}",
+                exchange,
+                includeLive,
+                requestedTickers.Count,
+                eodResult.Count,
+                stopwatch.ElapsedMilliseconds);
+
+            return eodResult;
         }
 
         // ---------------------------------------------------------
-        // Live endpoint
+        // LIVE REQUEST
         //
-        // MarketAlertLive
-        //
-        // Check market status:
-        //
-        // OPEN   -> 29 EOD cached candles + 1 Live
-        // CLOSED -> 30 EOD cached candles
+        // Market status is required only for live requests.
+        // Segment is always CASH.
         // ---------------------------------------------------------
+
+        const string segment = "CASH";
+
+        _logger.LogTrace(
+            "Checking market status for live request. " +
+            "Exchange: {Exchange}, Segment: {Segment}",
+            exchange,
+            segment);
 
         var marketStatus =
             await _marketStatusService.GetMarketStatusAsync(
                 exchange,
-                "CASH",
+                segment,
                 cancellationToken);
 
         _logger.LogTrace(
-            "Market status for {Exchange}: {Status}, IsOpen: {IsMarketOpen}",
+            "Market status retrieved. " +
+            "Exchange: {Exchange}, Segment: {Segment}, " +
+            "Status: {Status}, IsMarketOpen: {IsMarketOpen}",
             exchange,
+            segment,
             marketStatus.Status,
             marketStatus.IsMarketOpen);
 
+        // ---------------------------------------------------------
+        // LIVE REQUEST + MARKET OPEN
+        // ---------------------------------------------------------
+
         if (marketStatus.IsMarketOpen)
         {
-            return await GetOpenMarketDataAsync(
+            _logger.LogTrace(
+                "Using live market data path. " +
+                "Exchange: {Exchange}, TickerCount: {TickerCount}",
                 exchange,
-                normalizedTickers,
-                cancellationToken);
+                requestedTickers.Count);
+
+            var liveResult =
+                await GetOpenMarketDataAsync(
+                    exchange,
+                    requestedTickers,
+                    lookbackCandles,
+                    cancellationToken);
+
+            stopwatch.Stop();
+
+            _logger.LogTrace(
+                "Market data retrieval completed. " +
+                "Exchange: {Exchange}, IncludeLive: {IncludeLive}, " +
+                "MarketStatus: {MarketStatus}, " +
+                "TickerCount: {TickerCount}, ResultCount: {ResultCount}, " +
+                "ElapsedMs: {ElapsedMs}",
+                exchange,
+                includeLive,
+                marketStatus.Status,
+                requestedTickers.Count,
+                liveResult.Count,
+                stopwatch.ElapsedMilliseconds);
+
+            return liveResult;
         }
 
-        return GetClosedMarketData(
+        // ---------------------------------------------------------
+        // LIVE REQUEST + MARKET CLOSED
+        //
+        // Fall back to EOD.
+        // ---------------------------------------------------------
+
+        _logger.LogTrace(
+            "Live request received while market is closed. " +
+            "Falling back to EOD path. " +
+            "Exchange: {Exchange}, Status: {Status}",
             exchange,
-            normalizedTickers);
+            marketStatus.Status);
+
+        var closedResult =
+            GetClosedMarketData(
+                exchange,
+                requestedTickers,
+                lookbackCandles);
+
+        stopwatch.Stop();
+
+        _logger.LogTrace(
+            "Market data retrieval completed. " +
+            "Exchange: {Exchange}, IncludeLive: {IncludeLive}, " +
+            "MarketStatus: {MarketStatus}, TickerCount: {TickerCount}, " +
+            "ResultCount: {ResultCount}, ElapsedMs: {ElapsedMs}",
+            exchange,
+            includeLive,
+            marketStatus.Status,
+            requestedTickers.Count,
+            closedResult.Count,
+            stopwatch.ElapsedMilliseconds);
+
+        return closedResult;
     }
+
+    #region Closed Market
+
+    private List<MarketDataResult> GetClosedMarketData(
+        string exchange,
+        IReadOnlyList<string> tickers,
+        int lookbackCandles)
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        _logger.LogTrace(
+            "EOD market data processing started. " +
+            "Exchange: {Exchange}, TickerCount: {TickerCount}, " +
+            "LookbackCandles: {LookbackCandles}",
+            exchange,
+            tickers.Count,
+            lookbackCandles);
+
+        var results =
+            new List<MarketDataResult>(
+                tickers.Count);
+
+        if (!_eodHistoryCache.IsReady)
+        {
+            _logger.LogDebug(
+                "EOD cache is not ready. " +
+                "All requested symbols will be skipped. " +
+                "Exchange: {Exchange}, TickerCount: {TickerCount}",
+                exchange,
+                tickers.Count);
+
+            foreach (var ticker in tickers)
+            {
+                results.Add(
+                    CreateSkippedResult(
+                        ticker,
+                        MarketDataSkipReason.CacheNotReady));
+            }
+
+            stopwatch.Stop();
+
+            _logger.LogTrace(
+                "EOD market data processing completed. " +
+                "Exchange: {Exchange}, ResultCount: {ResultCount}, " +
+                "ElapsedMs: {ElapsedMs}",
+                exchange,
+                results.Count,
+                stopwatch.ElapsedMilliseconds);
+
+            return results;
+        }
+
+        foreach (var ticker in tickers)
+        {
+            var history =
+                _eodHistoryCache.GetHistory(
+                    exchange,
+                    ticker);
+
+            // -----------------------------------------------------
+            // SYMBOL NOT FOUND IN CACHE
+            // -----------------------------------------------------
+
+            if (history == null)
+            {
+                results.Add(
+                    CreateSkippedResult(
+                        ticker,
+                        MarketDataSkipReason.SymbolNotFoundInCache));
+
+                _logger.LogDebug(
+                    "Market data symbol skipped. " +
+                    "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                    "Reason: {Reason}",
+                    exchange,
+                    ticker,
+                    MarketDataSkipReason.SymbolNotFoundInCache);
+
+                continue;
+            }
+
+            // -----------------------------------------------------
+            // NO HISTORY
+            // -----------------------------------------------------
+
+            if (history.Count == 0)
+            {
+                results.Add(
+                    CreateSkippedResult(
+                        ticker,
+                        MarketDataSkipReason.NoHistory));
+
+                _logger.LogDebug(
+                    "Market data symbol skipped. " +
+                    "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                    "Reason: {Reason}",
+                    exchange,
+                    ticker,
+                    MarketDataSkipReason.NoHistory);
+
+                continue;
+            }
+
+            // -----------------------------------------------------
+            // INSUFFICIENT CANDLES
+            // -----------------------------------------------------
+
+            if (history.Count < lookbackCandles)
+            {
+                results.Add(
+                    CreateSkippedResult(
+                        ticker,
+                        history[0].Token,
+                        MarketDataSkipReason.InsufficientCandles));
+
+                _logger.LogDebug(
+                    "Market data symbol skipped. " +
+                    "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                    "AvailableCandles: {AvailableCandles}, " +
+                    "RequiredCandles: {RequiredCandles}, " +
+                    "Reason: {Reason}",
+                    exchange,
+                    ticker,
+                    history.Count,
+                    lookbackCandles,
+                    MarketDataSkipReason.InsufficientCandles);
+
+                continue;
+            }
+
+            // -----------------------------------------------------
+            // TAKE LAST N CANDLES
+            // -----------------------------------------------------
+
+            var candles =
+                TakeLastCandles(
+                    history,
+                    lookbackCandles);
+
+            results.Add(
+                new MarketDataResult
+                {
+                    Ticker = ticker,
+                    Token = candles[0].Token,
+                    Candles = candles,
+                    SkipReason = MarketDataSkipReason.None
+                });
+
+            _logger.LogDebug(
+                "Market data symbol processed. " +
+                "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                "CandleCount: {CandleCount}",
+                exchange,
+                ticker,
+                candles.Count);
+        }
+
+        stopwatch.Stop();
+
+        _logger.LogTrace(
+            "EOD market data processing completed. " +
+            "Exchange: {Exchange}, TickerCount: {TickerCount}, " +
+            "ResultCount: {ResultCount}, ElapsedMs: {ElapsedMs}",
+            exchange,
+            tickers.Count,
+            results.Count,
+            stopwatch.ElapsedMilliseconds);
+
+        return results;
+    }
+
+    #endregion
+
+    #region Open Market
 
     private async Task<List<MarketDataResult>> GetOpenMarketDataAsync(
         string exchange,
-        List<string> tickers,
+        IReadOnlyList<string> tickers,
+        int lookbackCandles,
         CancellationToken cancellationToken)
     {
-        var lookbackCandles =
-            _settings.DefaultLookbackCandles;
-
-        if (lookbackCandles < 2)
-        {
-            throw new InvalidOperationException(
-                "DefaultLookbackCandles must be at least 2 " +
-                "when live market data is enabled.");
-        }
-
-        var historicalCandleCount =
-            lookbackCandles - 1;
+        var stopwatch = Stopwatch.StartNew();
 
         _logger.LogTrace(
-            "Market is OPEN. Using {HistoricalCandleCount} cached EOD candles + 1 live candle. " +
-            "Total: {TotalCandles}. TickerCount: {TickerCount}",
-            historicalCandleCount,
-            lookbackCandles,
-            tickers.Count);
+            "Open market data processing started. " +
+            "Exchange: {Exchange}, TickerCount: {TickerCount}, " +
+            "LookbackCandles: {LookbackCandles}",
+            exchange,
+            tickers.Count,
+            lookbackCandles);
+
+        var results =
+            new List<MarketDataResult>(
+                tickers.Count);
+
+        if (!_eodHistoryCache.IsReady)
+        {
+            _logger.LogDebug(
+                "EOD cache is not ready for live analysis. " +
+                "All requested symbols will be skipped. " +
+                "Exchange: {Exchange}, TickerCount: {TickerCount}",
+                exchange,
+                tickers.Count);
+
+            foreach (var ticker in tickers)
+            {
+                results.Add(
+                    CreateSkippedResult(
+                        ticker,
+                        MarketDataSkipReason.CacheNotReady));
+            }
+
+            stopwatch.Stop();
+
+            _logger.LogTrace(
+                "Open market data processing completed. " +
+                "Exchange: {Exchange}, ResultCount: {ResultCount}, " +
+                "ElapsedMs: {ElapsedMs}",
+                exchange,
+                results.Count,
+                stopwatch.ElapsedMilliseconds);
+
+            return results;
+        }
 
         // ---------------------------------------------------------
-        // Check EOD cache
-        // ---------------------------------------------------------
-
-        EnsureEodCacheReady();
-
-        // ---------------------------------------------------------
-        // Get historical candles from cache
-        //
-        // No database call.
-        // Cache contains up to 120 candles per ticker.
-        // We only take the latest required candles.
+        // GET HISTORICAL DATA
         // ---------------------------------------------------------
 
         var historicalData =
-            GetCachedHistoricalData(
+            new Dictionary<string, List<MarketCandle>>(
+                StringComparer.OrdinalIgnoreCase);
+
+        foreach (var ticker in tickers)
+        {
+            var history =
+                _eodHistoryCache.GetHistory(
+                    exchange,
+                    ticker);
+
+            if (history == null)
+            {
+                results.Add(
+                    CreateSkippedResult(
+                        ticker,
+                        MarketDataSkipReason.SymbolNotFoundInCache));
+
+                _logger.LogDebug(
+                    "Market data symbol skipped. " +
+                    "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                    "Reason: {Reason}",
+                    exchange,
+                    ticker,
+                    MarketDataSkipReason.SymbolNotFoundInCache);
+
+                continue;
+            }
+
+            if (history.Count == 0)
+            {
+                results.Add(
+                    CreateSkippedResult(
+                        ticker,
+                        MarketDataSkipReason.NoHistory));
+
+                _logger.LogDebug(
+                    "Market data symbol skipped. " +
+                    "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                    "Reason: {Reason}",
+                    exchange,
+                    ticker,
+                    MarketDataSkipReason.NoHistory);
+
+                continue;
+            }
+
+            if (history.Count < lookbackCandles)
+            {
+                results.Add(
+                    CreateSkippedResult(
+                        ticker,
+                        history[0].Token,
+                        MarketDataSkipReason.InsufficientCandles));
+
+                _logger.LogDebug(
+                    "Market data symbol skipped. " +
+                    "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                    "AvailableCandles: {AvailableCandles}, " +
+                    "RequiredCandles: {RequiredCandles}, " +
+                    "Reason: {Reason}",
+                    exchange,
+                    ticker,
+                    history.Count,
+                    lookbackCandles,
+                    MarketDataSkipReason.InsufficientCandles);
+
+                continue;
+            }
+
+            historicalData[ticker] =
+                TakeLastCandles(
+                    history,
+                    lookbackCandles);
+
+            _logger.LogDebug(
+                "Historical market data prepared for live analysis. " +
+                "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                "CandleCount: {CandleCount}",
                 exchange,
-                tickers,
-                historicalCandleCount);
+                ticker,
+                historicalData[ticker].Count);
+        }
+
+        if (historicalData.Count == 0)
+        {
+            stopwatch.Stop();
+
+            _logger.LogTrace(
+                "Open market data processing completed without valid " +
+                "historical symbols. Exchange: {Exchange}, " +
+                "ResultCount: {ResultCount}, ElapsedMs: {ElapsedMs}",
+                exchange,
+                results.Count,
+                stopwatch.ElapsedMilliseconds);
+
+            return results;
+        }
 
         // ---------------------------------------------------------
-        // Get today's live data
+        // LIVE API
         // ---------------------------------------------------------
 
         var liveResponse =
@@ -172,256 +619,268 @@ public sealed class MarketDataService : IMarketDataService
                 exchange,
                 cancellationToken);
 
-        var liveQuotes =
-            liveResponse.Quotes;
+        _logger.LogTrace(
+            "Live quotes received for market data processing. " +
+            "Exchange: {Exchange}, QuoteCount: {QuoteCount}",
+            exchange,
+            liveResponse.Quotes.Count);
 
         // ---------------------------------------------------------
-        // Filter live quotes
+        // LIVE QUOTE DICTIONARY
         // ---------------------------------------------------------
 
-        if (tickers.Count > 0)
-        {
-            var tickerSet =
-                tickers.ToHashSet(
+        var liveQuotesByTicker =
+            liveResponse.Quotes
+                .Where(x =>
+                    !string.IsNullOrWhiteSpace(x.Ticker))
+                .GroupBy(
+                    x => x.Ticker.Trim(),
+                    StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.First(),
                     StringComparer.OrdinalIgnoreCase);
 
-            liveQuotes = liveQuotes
-                .Where(x =>
-                    !string.IsNullOrWhiteSpace(x.Ticker) &&
-                    tickerSet.Contains(x.Ticker))
-                .ToList();
-
-            _logger.LogTrace(
-                "Filtered live quotes. " +
-                "RequestedTickerCount: {RequestedTickerCount}, " +
-                "LiveQuoteCount: {LiveQuoteCount}",
-                tickers.Count,
-                liveQuotes.Count);
-        }
-        else
-        {
-            _logger.LogTrace(
-                "No ticker filter supplied. " +
-                "Using all {LiveQuoteCount} live quotes.",
-                liveQuotes.Count);
-        }
+        var liveDate =
+            DateTime.Today;
 
         // ---------------------------------------------------------
-        // Combine EOD cache + Live
+        // MERGE EOD + LIVE
         // ---------------------------------------------------------
 
-        var result =
-            new List<MarketDataResult>();
-
-        foreach (var historicalItem in historicalData)
+        foreach (var ticker in tickers)
         {
-            var currentTicker =
-                historicalItem.Key;
-
-            var candles =
-                historicalItem.Value
-                    .OrderBy(x => x.Date)
-                    .ToList();
-
-            // Find corresponding live quote
-            var liveQuote =
-                liveQuotes.FirstOrDefault(x =>
-                    !string.IsNullOrWhiteSpace(x.Ticker) &&
-                    x.Ticker.Equals(
-                        currentTicker,
-                        StringComparison.OrdinalIgnoreCase));
-
-            if (liveQuote == null)
+            if (!historicalData.TryGetValue(
+                    ticker,
+                    out var candles))
             {
-                _logger.LogDebug(
-                    "Live quote not found for {Ticker}. " +
-                    "Returning cached historical candles only.",
-                    currentTicker);
+                continue;
+            }
 
-                result.Add(new MarketDataResult
-                {
-                    Ticker = currentTicker,
-                    Token = 0,
-                    Candles = candles
-                });
+            // -----------------------------------------------------
+            // LIVE QUOTE MISSING
+            // -----------------------------------------------------
+
+            if (!liveQuotesByTicker.TryGetValue(
+                    ticker,
+                    out var quote))
+            {
+                results.Add(
+                    CreateSkippedResult(
+                        ticker,
+                        candles[0].Token,
+                        MarketDataSkipReason.LiveQuoteMissing));
+
+                _logger.LogDebug(
+                    "Market data symbol skipped during live merge. " +
+                    "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                    "Reason: {Reason}",
+                    exchange,
+                    ticker,
+                    MarketDataSkipReason.LiveQuoteMissing);
 
                 continue;
             }
 
             // -----------------------------------------------------
-            // Create today's live candle
+            // INVALID LIVE QUOTE
             // -----------------------------------------------------
 
-            var liveCandle = new MarketCandle
+            if (!IsValidLiveQuote(
+                    quote.Open,
+                    quote.High,
+                    quote.Low,
+                    quote.LastPrice))
             {
-                SymbolId =
-                    candles.FirstOrDefault()?.SymbolId ?? 0,
+                results.Add(
+                    CreateSkippedResult(
+                        ticker,
+                        candles[0].Token,
+                        MarketDataSkipReason.InvalidLiveQuote));
 
-                Token =
-                    long.TryParse(
-                        liveQuote.Token,
-                        out var token)
-                        ? token
-                        : 0,
+                _logger.LogDebug(
+                    "Market data symbol skipped during live merge. " +
+                    "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                    "Reason: {Reason}",
+                    exchange,
+                    ticker,
+                    MarketDataSkipReason.InvalidLiveQuote);
 
-                Date =
-                    liveResponse.LastUpdatedTime.Date,
-
-                Open = liveQuote.Open,
-                High = liveQuote.High,
-                Low = liveQuote.Low,
-                Close = liveQuote.LastPrice,
-                Volume = liveQuote.Volume
-            };
-
-            candles.Add(liveCandle);
+                continue;
+            }
 
             // -----------------------------------------------------
-            // Keep chronological order
+            // CREATE LIVE CANDLE
             // -----------------------------------------------------
 
-            candles = candles
-                .OrderBy(x => x.Date)
-                .TakeLast(lookbackCandles)
-                .ToList();
+            var liveCandle =
+                new MarketCandle
+                {
+                    SymbolId = candles[0].SymbolId,
+                    Token = candles[0].Token,
+                    Date = liveDate,
+                    Open = quote.Open,
+                    High = quote.High,
+                    Low = quote.Low,
+                    Close = quote.LastPrice,
+                    Volume = quote.Volume
+                };
 
-            result.Add(new MarketDataResult
+            // -----------------------------------------------------
+            // REPLACE TODAY OR APPEND
+            // -----------------------------------------------------
+
+            var sameDateIndex =
+                candles.FindIndex(
+                    x => x.Date.Date == liveDate);
+
+            if (sameDateIndex >= 0)
             {
-                Ticker = currentTicker,
-                Token = liveCandle.Token,
-                Candles = candles
-            });
+                candles[sameDateIndex] =
+                    liveCandle;
+
+                _logger.LogDebug(
+                    "Today's EOD candle replaced with live candle. " +
+                    "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                    "Date: {Date:yyyy-MM-dd}",
+                    exchange,
+                    ticker,
+                    liveDate);
+            }
+            else
+            {
+                candles.Add(
+                    liveCandle);
+
+                _logger.LogDebug(
+                    "Live candle appended to historical data. " +
+                    "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                    "Date: {Date:yyyy-MM-dd}",
+                    exchange,
+                    ticker,
+                    liveDate);
+            }
+
+            // -----------------------------------------------------
+            // MAINTAIN LOOKBACK
+            // -----------------------------------------------------
+
+            candles =
+                TakeLastCandles(
+                    candles,
+                    lookbackCandles);
+
+            results.Add(
+                new MarketDataResult
+                {
+                    Ticker = ticker,
+                    Token = liveCandle.Token,
+                    Candles = candles,
+                    SkipReason = MarketDataSkipReason.None
+                });
+
+            _logger.LogDebug(
+                "Live market data prepared for symbol. " +
+                "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                "CandleCount: {CandleCount}",
+                exchange,
+                ticker,
+                candles.Count);
         }
 
-        return result;
-    }
-
-    private List<MarketDataResult> GetClosedMarketData(
-        string exchange,
-        List<string> tickers)
-    {
-        var lookbackCandles =
-            _settings.DefaultLookbackCandles;
+        stopwatch.Stop();
 
         _logger.LogTrace(
-            "Getting EOD data from cache. " +
-            "Exchange: {Exchange}, CandleCount: {CandleCount}, " +
-            "TickerCount: {TickerCount}",
+            "Open market data processing completed. " +
+            "Exchange: {Exchange}, TickerCount: {TickerCount}, " +
+            "ResultCount: {ResultCount}, ElapsedMs: {ElapsedMs}",
             exchange,
-            lookbackCandles,
-            tickers.Count);
+            tickers.Count,
+            results.Count,
+            stopwatch.ElapsedMilliseconds);
 
-        // ---------------------------------------------------------
-        // Check EOD cache
-        // ---------------------------------------------------------
-
-        EnsureEodCacheReady();
-
-        // ---------------------------------------------------------
-        // Get EOD candles from cache
-        // ---------------------------------------------------------
-
-        var historicalData =
-            GetCachedHistoricalData(
-                exchange,
-                tickers,
-                lookbackCandles);
-
-        var result =
-            new List<MarketDataResult>();
-
-        foreach (var item in historicalData)
-        {
-            var candles =
-                item.Value
-                    .OrderBy(x => x.Date)
-                    .ToList();
-
-            result.Add(new MarketDataResult
-            {
-                Ticker = item.Key,
-                Token = 0,
-                Candles = candles
-            });
-        }
-
-        return result;
+        return results;
     }
 
-    // ---------------------------------------------------------
-    // Get historical data from the EOD cache
-    // ---------------------------------------------------------
+    #endregion
 
-    private Dictionary<string, List<MarketCandle>>
-        GetCachedHistoricalData(
-            string exchange,
-            List<string> tickers,
-            int candleCount)
+    #region Validation
+
+    private static bool IsValidLiveQuote(
+        decimal open,
+        decimal high,
+        decimal low,
+        decimal lastPrice)
     {
-        var cachedHistory =
-            _eodHistoryCache.GetHistory(exchange);
-
-        if (cachedHistory.Count == 0)
+        if (open <= 0 ||
+            high <= 0 ||
+            low <= 0 ||
+            lastPrice <= 0)
         {
-            _logger.LogWarning(
-                "No EOD history found in cache. " +
-                "Exchange: {Exchange}",
-                exchange);
-
-            return new Dictionary<string, List<MarketCandle>>(
-                StringComparer.OrdinalIgnoreCase);
+            return false;
         }
 
-        // ---------------------------------------------------------
-        // No ticker filter
-        //
-        // Use all cached symbols.
-        // ---------------------------------------------------------
-
-        if (tickers.Count == 0)
+        if (high < low)
         {
-            return cachedHistory
-                .ToDictionary(
-                    x => x.Key,
-                    x => x.Value
-                        .OrderByDescending(c => c.Date)
-                        .Take(candleCount)
-                        .OrderBy(c => c.Date)
-                        .ToList(),
-                    StringComparer.OrdinalIgnoreCase);
+            return false;
         }
 
-        // ---------------------------------------------------------
-        // Filter cached data by requested tickers
-        // ---------------------------------------------------------
+        if (open < low ||
+            open > high)
+        {
+            return false;
+        }
 
-        var tickerSet =
-            tickers.ToHashSet(
-                StringComparer.OrdinalIgnoreCase);
+        if (lastPrice < low ||
+            lastPrice > high)
+        {
+            return false;
+        }
 
-        return cachedHistory
-            .Where(x => tickerSet.Contains(x.Key))
-            .ToDictionary(
-                x => x.Key,
-                x => x.Value
-                    .OrderByDescending(c => c.Date)
-                    .Take(candleCount)
-                    .OrderBy(c => c.Date)
-                    .ToList(),
-                StringComparer.OrdinalIgnoreCase);
+        return true;
     }
 
-    // ---------------------------------------------------------
-    // Make sure startup cache loading completed
-    // ---------------------------------------------------------
+    #endregion
 
-    private void EnsureEodCacheReady()
+    #region Helpers
+
+    private static List<MarketCandle> TakeLastCandles(
+        IReadOnlyList<MarketCandle> candles,
+        int candleCount)
     {
-        if (!_eodHistoryCache.IsReady)
+        if (candles.Count <= candleCount)
         {
-            throw new InvalidOperationException(
-                "EOD history cache is not ready. " +
-                "The application startup cache warm-up may not have completed.");
+            return candles.ToList();
         }
+
+        return candles
+            .Skip(candles.Count - candleCount)
+            .ToList();
     }
+
+    private static MarketDataResult CreateSkippedResult(
+        string ticker,
+        MarketDataSkipReason reason)
+    {
+        return new MarketDataResult
+        {
+            Ticker = ticker,
+            SkipReason = reason
+        };
+    }
+
+    private static MarketDataResult CreateSkippedResult(
+        string ticker,
+        long token,
+        MarketDataSkipReason reason)
+    {
+        return new MarketDataResult
+        {
+            Ticker = ticker,
+            Token = token,
+            SkipReason = reason
+        };
+    }
+
+    #endregion
 }

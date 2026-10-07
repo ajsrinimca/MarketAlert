@@ -6,7 +6,11 @@ public class TriangleAlertResponse
 
     public string Exchange { get; set; } = string.Empty;
 
-    public string Ltd { get; set; } = string.Empty;
+    public string? Ltd { get; set; }
 
-    public List<TriangleAlertItem> Data { get; set; } = new();
+    public List<TriangleAlertItem> Data { get; set; }
+        = new List<TriangleAlertItem>();
+
+    public TriangleAlertSummary Summary { get; set; }
+        = new TriangleAlertSummary();
 }

@@ -31,15 +31,6 @@ public sealed class MarketSymbolService
         string group,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(group))
-        {
-            throw new ArgumentException(
-                "Group is required.",
-                nameof(group));
-        }
-
-        group = group.Trim();
-
         // ---------------------------------------------------------
         // CACHE
         // ---------------------------------------------------------

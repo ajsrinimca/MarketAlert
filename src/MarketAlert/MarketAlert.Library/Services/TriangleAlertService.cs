@@ -11,20 +11,17 @@ public interface ITriangleAlertService
 
 public sealed class TriangleAlertService : ITriangleAlertService
 {
-    private readonly IEodHistoryCache _eodHistoryCache;
     private readonly IMarketDataService _marketDataService;
     private readonly IMarketSymbolService _marketSymbolService;
     private readonly ITriangleDetectionService _triangleDetectionService;
     private readonly ILogger<TriangleAlertService> _logger;
 
     public TriangleAlertService(
-        IEodHistoryCache eodHistoryCache,
         IMarketDataService marketDataService,
         IMarketSymbolService marketSymbolService,
         ITriangleDetectionService triangleDetectionService,
         ILogger<TriangleAlertService> logger)
     {
-        _eodHistoryCache = eodHistoryCache;
         _marketDataService = marketDataService;
         _marketSymbolService = marketSymbolService;
         _triangleDetectionService = triangleDetectionService;
@@ -37,6 +34,13 @@ public sealed class TriangleAlertService : ITriangleAlertService
         bool includeLive,
         CancellationToken cancellationToken = default)
     {
+        var stopwatch =
+            Stopwatch.StartNew();
+
+        // ---------------------------------------------------------
+        // VALIDATE REQUEST
+        // ---------------------------------------------------------
+
         if (string.IsNullOrWhiteSpace(exchange))
         {
             throw new ArgumentException(
@@ -44,171 +48,179 @@ public sealed class TriangleAlertService : ITriangleAlertService
                 nameof(exchange));
         }
 
-        exchange = exchange.Trim().ToUpperInvariant();
-
-        if (exchange is not ("NSE" or "BSE"))
-        {
-            throw new ArgumentException(
-                $"Unsupported exchange: {exchange}",
-                nameof(exchange));
-        }
+        exchange =
+            exchange.Trim().ToUpperInvariant();
 
         if (!string.IsNullOrWhiteSpace(group))
         {
             group = group.Trim();
         }
+        else
+        {
+            group = null;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // ---------------------------------------------------------
+        // REQUEST START
+        // ---------------------------------------------------------
 
         _logger.LogTrace(
-            "Starting triangle alert analysis. " +
-            "Exchange: {Exchange}, Group: {Group}, IncludeLive: {IncludeLive}",
+            "Triangle alert analysis started. " +
+            "Exchange: {Exchange}, Group: {Group}, " +
+            "IncludeLive: {IncludeLive}",
             exchange,
             group ?? "ALL",
             includeLive);
 
         // ---------------------------------------------------------
-        // RESOLVE GROUP TO TICKERS
+        // RESOLVE GROUP
         // ---------------------------------------------------------
 
-        var tickers = new List<string>();
+        List<string>? tickers = null;
 
         if (!string.IsNullOrWhiteSpace(group))
         {
+            var groupStopwatch =
+                Stopwatch.StartNew();
+
             tickers =
                 await _marketSymbolService.GetTickersByGroupAsync(
                     group,
                     cancellationToken);
 
+            groupStopwatch.Stop();
+
             tickers = tickers
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .Select(x => x.Trim().ToUpperInvariant())
-                .Distinct()
+                .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
+
+            _logger.LogTrace(
+                "Group ticker resolution completed. " +
+                "Exchange: {Exchange}, Group: {Group}, " +
+                "TickerCount: {TickerCount}, ElapsedMs: {ElapsedMs}",
+                exchange,
+                group,
+                tickers.Count,
+                groupStopwatch.ElapsedMilliseconds);
+
+            if (tickers.Count == 0)
+            {
+                stopwatch.Stop();
+
+                var emptyResponse =
+                    new TriangleAlertResponse
+                    {
+                        TimeStamp = DateTime.Now,
+                        Exchange = exchange,
+                        Data = new List<TriangleAlertItem>(),
+                        Summary = new TriangleAlertSummary
+                        {
+                            Requested = 0,
+                            Processed = 0,
+                            Detected = 0,
+                            Skipped = 0,
+                            Failed = 0,
+                            ElapsedMs = stopwatch.ElapsedMilliseconds
+                        }
+                    };
+
+                _logger.LogTrace(
+                    "Triangle alert analysis summary. " +
+                    "Exchange: {Exchange}, Group: {Group}, " +
+                    "IncludeLive: {IncludeLive}, " +
+                    "Requested: {Requested}, " +
+                    "Processed: {Processed}, " +
+                    "Detected: {Detected}, " +
+                    "Skipped: {Skipped}, " +
+                    "Failed: {Failed}, " +
+                    "ElapsedMs: {ElapsedMs}",
+                    exchange,
+                    group,
+                    includeLive,
+                    emptyResponse.Summary.Requested,
+                    emptyResponse.Summary.Processed,
+                    emptyResponse.Summary.Detected,
+                    emptyResponse.Summary.Skipped,
+                    emptyResponse.Summary.Failed,
+                    emptyResponse.Summary.ElapsedMs);
+
+                return emptyResponse;
+            }
         }
+
+        // ---------------------------------------------------------
+        // MARKET DATA
+        // ---------------------------------------------------------
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var marketDataStopwatch =
+            Stopwatch.StartNew();
+
+        var marketData =
+            await _marketDataService.GetMarketDataAsync(
+                exchange,
+                tickers,
+                includeLive,
+                cancellationToken);
+
+        marketDataStopwatch.Stop();
 
         _logger.LogTrace(
-            "Ticker selection completed. " +
-            "Exchange: {Exchange}, Group: {Group}, TickerCount: {TickerCount}",
+            "Market data retrieval completed. " +
+            "Exchange: {Exchange}, Group: {Group}, " +
+            "IncludeLive: {IncludeLive}, ResultCount: {ResultCount}, " +
+            "ElapsedMs: {ElapsedMs}",
             exchange,
             group ?? "ALL",
-            tickers.Count);
+            includeLive,
+            marketData.Count,
+            marketDataStopwatch.ElapsedMilliseconds);
 
         // ---------------------------------------------------------
-        // GET DATA
+        // RESPONSE
         // ---------------------------------------------------------
 
-        Dictionary<string, List<MarketCandle>> marketHistory;
-
-        if (!includeLive)
-        {
-            // -----------------------------------------------------
-            // EOD DATA
-            // -----------------------------------------------------
-            // IMPORTANT:
-            // This data was already loaded during application startup.
-            // There should be NO EOD database call here.
-            // -----------------------------------------------------
-
-            if (!_eodHistoryCache.IsReady)
+        var response =
+            new TriangleAlertResponse
             {
-                throw new InvalidOperationException(
-                    "EOD history cache is not ready.");
-            }
-
-            var cachedHistory =
-                _eodHistoryCache.GetHistory(exchange);
-
-            if (cachedHistory.Count == 0)
-            {
-                _logger.LogWarning(
-                    "No EOD history found in cache. " +
-                    "Exchange: {Exchange}",
-                    exchange);
-
-                marketHistory =
-                    new Dictionary<string, List<MarketCandle>>(
-                        StringComparer.OrdinalIgnoreCase);
-            }
-            else if (tickers.Count == 0)
-            {
-                // No group supplied.
-                // Use all symbols already loaded into cache.
-                marketHistory =
-                    cachedHistory.ToDictionary(
-                        x => x.Key,
-                        x => x.Value,
-                        StringComparer.OrdinalIgnoreCase);
-            }
-            else
-            {
-                // Group supplied.
-                // Filter the already-cached data.
-                var tickerSet =
-                    tickers.ToHashSet(
-                        StringComparer.OrdinalIgnoreCase);
-
-                marketHistory =
-                    cachedHistory
-                        .Where(x => tickerSet.Contains(x.Key))
-                        .ToDictionary(
-                            x => x.Key,
-                            x => x.Value,
-                            StringComparer.OrdinalIgnoreCase);
-            }
-
-            _logger.LogTrace(
-                "Using EOD history from cache. " +
-                "Exchange: {Exchange}, CachedTickerCount: {CachedTickerCount}, " +
-                "AnalysisTickerCount: {AnalysisTickerCount}",
-                exchange,
-                cachedHistory.Count,
-                marketHistory.Count);
-        }
-        else
-        {
-            // -----------------------------------------------------
-            // LIVE DATA
-            // -----------------------------------------------------
-            // Keep the existing live market-data flow for now.
-            // We will separate EOD + Live completely in the next
-            // step if MarketDataService currently queries EOD data.
-            // -----------------------------------------------------
-
-            var marketData =
-                await _marketDataService.GetMarketDataAsync(
-                    exchange,
-                    tickers,
-                    includeLive: true,
-                    cancellationToken);
-
-            marketHistory =
-                marketData
-                    .ToDictionary(
-                        x => x.Ticker,
-                        x => x.Candles,
-                        StringComparer.OrdinalIgnoreCase);
-
-            _logger.LogTrace(
-                "Live market data retrieved. " +
-                "Exchange: {Exchange}, TickerCount: {TickerCount}",
-                exchange,
-                marketHistory.Count);
-        }
+                TimeStamp = DateTime.Now,
+                Exchange = exchange,
+                Data = new List<TriangleAlertItem>()
+            };
 
         // ---------------------------------------------------------
-        // BUILD RESPONSE
+        // REQUESTED
+        // ---------------------------------------------------------
+        //
+        // With group:
+        //     requested = resolved group ticker count
+        //
+        // Without group:
+        //     MarketDataService resolved all EOD tickers and returns
+        //     one result per ticker, including skipped results.
         // ---------------------------------------------------------
 
-        var response = new TriangleAlertResponse
-        {
-            TimeStamp = DateTime.Now,
-            Exchange = exchange
-        };
+        var requestedCount =
+            tickers != null
+                ? tickers.Count
+                : marketData.Count;
 
-        var latestCandleDate = marketHistory
-            .SelectMany(x => x.Value)
-            .Select(x => x.Date)
-            .OrderByDescending(x => x)
-            .FirstOrDefault();
+        // ---------------------------------------------------------
+        // LTD
+        // ---------------------------------------------------------
+
+        var latestCandleDate =
+            marketData
+                .Where(x => !x.IsSkipped)
+                .SelectMany(x => x.Candles)
+                .Select(x => x.Date)
+                .DefaultIfEmpty()
+                .Max();
 
         if (latestCandleDate != default)
         {
@@ -217,50 +229,178 @@ public sealed class TriangleAlertService : ITriangleAlertService
         }
 
         // ---------------------------------------------------------
-        // DETECT TRIANGLES
+        // PROCESS SYMBOLS
         // ---------------------------------------------------------
 
-        foreach (var item in marketHistory)
-        {
-            var ticker = item.Key;
-            var candles = item.Value;
+        var processedCount = 0;
+        var detectedCount = 0;
+        var skippedCount = 0;
+        var failedCount = 0;
 
-            if (candles.Count == 0)
+        foreach (var item in marketData)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // -----------------------------------------------------
+            // SKIPPED SYMBOL
+            // -----------------------------------------------------
+
+            if (item.IsSkipped)
             {
+                skippedCount++;
+
+                _logger.LogDebug(
+                    "Triangle symbol skipped. " +
+                    "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                    "Token: {Token}, Reason: {Reason}",
+                    exchange,
+                    item.Ticker,
+                    item.Token,
+                    item.SkipReason);
+
                 continue;
             }
 
-            // EOD cache currently contains MarketCandle data only.
-            // If MarketCandle doesn't contain Token, the token cannot
-            // be recovered from EODData.sqlite without another lookup.
-            //
-            // For now:
-            // - EOD: token = 0
-            // - Live: token comes from the existing MarketDataService path
+            // -----------------------------------------------------
+            // NO CANDLES
+            // -----------------------------------------------------
 
-            long token = 0;
+            if (item.Candles == null ||
+                item.Candles.Count == 0)
+            {
+                skippedCount++;
 
-            var detectionResult =
-                _triangleDetectionService.Detect(
-                    ticker,
-                    token,
-                    candles);
+                _logger.LogDebug(
+                    "Triangle symbol skipped. " +
+                    "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                    "Token: {Token}, Reason: NoCandles",
+                    exchange,
+                    item.Ticker,
+                    item.Token);
 
-            response.Data.Add(detectionResult);
+                continue;
+            }
+
+            // -----------------------------------------------------
+            // DETECTION
+            // -----------------------------------------------------
+
+            var symbolStopwatch =
+                Stopwatch.StartNew();
+
+            try
+            {
+                processedCount++;
+
+                var detectionResult =
+                    _triangleDetectionService.Detect(
+                        item.Ticker,
+                        item.Token,
+                        item.Candles);
+
+                symbolStopwatch.Stop();
+
+                if (detectionResult != null)
+                {
+                    response.Data.Add(
+                        detectionResult);
+
+                    detectedCount++;
+
+                    _logger.LogDebug(
+                        "Triangle symbol processed. " +
+                        "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                        "Token: {Token}, CandleCount: {CandleCount}, " +
+                        "Detected: true, ElapsedMs: {ElapsedMs}",
+                        exchange,
+                        item.Ticker,
+                        item.Token,
+                        item.Candles.Count,
+                        symbolStopwatch.ElapsedMilliseconds);
+                }
+                else
+                {
+                    _logger.LogDebug(
+                        "Triangle symbol processed. " +
+                        "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                        "Token: {Token}, CandleCount: {CandleCount}, " +
+                        "Detected: false, ElapsedMs: {ElapsedMs}",
+                        exchange,
+                        item.Ticker,
+                        item.Token,
+                        item.Candles.Count,
+                        symbolStopwatch.ElapsedMilliseconds);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                symbolStopwatch.Stop();
+                throw;
+            }
+            catch (Exception ex)
+            {
+                symbolStopwatch.Stop();
+
+                failedCount++;
+
+                /*
+                 * Exception object is deliberately passed to LogDebug.
+                 */
+                _logger.LogDebug(
+                    ex,
+                    "Triangle detection failed for symbol. " +
+                    "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                    "Token: {Token}, Reason: DetectionException, " +
+                    "ElapsedMs: {ElapsedMs}",
+                    exchange,
+                    item.Ticker,
+                    item.Token,
+                    symbolStopwatch.ElapsedMilliseconds);
+
+                // Continue to next symbol.
+            }
         }
 
         // ---------------------------------------------------------
-        // COMPLETE
+        // REQUEST SUMMARY
+        // ---------------------------------------------------------
+
+        stopwatch.Stop();
+
+        response.Summary =
+            new TriangleAlertSummary
+            {
+                Requested = requestedCount,
+                Processed = processedCount,
+                Detected = detectedCount,
+                Skipped = skippedCount,
+                Failed = failedCount,
+                ElapsedMs = stopwatch.ElapsedMilliseconds
+            };
+
+        // ---------------------------------------------------------
+        // ONE TRACE SUMMARY LINE
         // ---------------------------------------------------------
 
         _logger.LogTrace(
-            "Triangle alert analysis completed. " +
+            "Triangle alert analysis summary. " +
             "Exchange: {Exchange}, Group: {Group}, " +
-            "IncludeLive: {IncludeLive}, TickerCount: {TickerCount}",
+            "IncludeLive: {IncludeLive}, " +
+            "Requested: {Requested}, " +
+            "Processed: {Processed}, " +
+            "Detected: {Detected}, " +
+            "Skipped: {Skipped}, " +
+            "Failed: {Failed}, " +
+            "ElapsedMs: {ElapsedMs}",
             exchange,
             group ?? "ALL",
             includeLive,
-            response.Data.Count);
+            response.Summary.Requested,
+            response.Summary.Processed,
+            response.Summary.Detected,
+            response.Summary.Skipped,
+            response.Summary.Failed,
+            response.Summary.ElapsedMs);
 
         return response;
     }

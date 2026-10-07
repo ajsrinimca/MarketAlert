@@ -6,14 +6,14 @@ public static class EndpointExtension
         this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup(
-            "/api/eodanalytics/MarketAlert");
+            "/api/eodanalytics");
 
         // --------------------------------------------------
         // EOD Triangle Alert
         // --------------------------------------------------
 
         group.MapGet(
-            "/Triangle/{exchange}/{groupName?}",
+            "MarketAlert/TriangleAlert/{exchange}/{groupName?}",
             async (
                 string exchange,
                 string? groupName,
@@ -47,7 +47,7 @@ public static class EndpointExtension
         // --------------------------------------------------
 
         group.MapGet(
-            "/TriangleLive/{exchange}/{groupName?}",
+            "MarketAlertLive/TriangleAlert/{exchange}/{groupName?}",
             async (
                 string exchange,
                 string? groupName,

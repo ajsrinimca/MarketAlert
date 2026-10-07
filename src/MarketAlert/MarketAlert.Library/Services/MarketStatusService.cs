@@ -83,7 +83,7 @@ public sealed class MarketStatusService
                     timing.StartTime,
                     out var startTime))
             {
-                _logger.LogWarning(
+                _logger.LogDebug(
                     "Invalid StartTime '{StartTime}' for {Exchange}/{Segment}",
                     timing.StartTime,
                     exchange,
@@ -96,7 +96,7 @@ public sealed class MarketStatusService
                     timing.EndTime,
                     out var endTime))
             {
-                _logger.LogWarning(
+                _logger.LogDebug(
                     "Invalid EndTime '{EndTime}' for {Exchange}/{Segment}",
                     timing.EndTime,
                     exchange,

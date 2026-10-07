@@ -6,5 +6,11 @@ public class MarketDataResult
 
     public long Token { get; set; }
 
-    public List<MarketCandle> Candles { get; set; } = new();
+    public List<MarketCandle> Candles { get; set; }
+        = new List<MarketCandle>();
+
+    public MarketDataSkipReason SkipReason { get; set; }
+
+    public bool IsSkipped =>
+        SkipReason != MarketDataSkipReason.None;
 }
