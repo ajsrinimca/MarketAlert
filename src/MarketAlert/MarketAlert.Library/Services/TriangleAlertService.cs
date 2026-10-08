@@ -34,8 +34,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
         bool includeLive,
         CancellationToken cancellationToken = default)
     {
-        var stopwatch =
-            Stopwatch.StartNew();
+        var stopwatch = Stopwatch.StartNew();
 
         // ---------------------------------------------------------
         // VALIDATE REQUEST
@@ -48,8 +47,9 @@ public sealed class TriangleAlertService : ITriangleAlertService
                 nameof(exchange));
         }
 
-        exchange =
-            exchange.Trim().ToUpperInvariant();
+        exchange = exchange
+            .Trim()
+            .ToUpperInvariant();
 
         if (!string.IsNullOrWhiteSpace(group))
         {
@@ -82,8 +82,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
 
         if (!string.IsNullOrWhiteSpace(group))
         {
-            var groupStopwatch =
-                Stopwatch.StartNew();
+            var groupStopwatch = Stopwatch.StartNew();
 
             tickers =
                 await _marketSymbolService.GetTickersByGroupAsync(
@@ -123,6 +122,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
                             Processed = 0,
                             Detected = 0,
                             Skipped = 0,
+                            MissedInDb = 0,
                             Failed = 0,
                             ElapsedMs = stopwatch.ElapsedMilliseconds
                         }
@@ -136,6 +136,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
                     "Processed: {Processed}, " +
                     "Detected: {Detected}, " +
                     "Skipped: {Skipped}, " +
+                    "MissedInDb: {MissedInDb}, " +
                     "Failed: {Failed}, " +
                     "ElapsedMs: {ElapsedMs}",
                     exchange,
@@ -145,6 +146,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
                     emptyResponse.Summary.Processed,
                     emptyResponse.Summary.Detected,
                     emptyResponse.Summary.Skipped,
+                    emptyResponse.Summary.MissedInDb,
                     emptyResponse.Summary.Failed,
                     emptyResponse.Summary.ElapsedMs);
 
@@ -158,8 +160,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var marketDataStopwatch =
-            Stopwatch.StartNew();
+        var marketDataStopwatch = Stopwatch.StartNew();
 
         var marketData =
             await _marketDataService.GetMarketDataAsync(
@@ -196,14 +197,6 @@ public sealed class TriangleAlertService : ITriangleAlertService
         // ---------------------------------------------------------
         // REQUESTED
         // ---------------------------------------------------------
-        //
-        // With group:
-        //     requested = resolved group ticker count
-        //
-        // Without group:
-        //     MarketDataService resolved all EOD tickers and returns
-        //     one result per ticker, including skipped results.
-        // ---------------------------------------------------------
 
         var requestedCount =
             tickers != null
@@ -216,9 +209,11 @@ public sealed class TriangleAlertService : ITriangleAlertService
 
         var latestCandleDate =
             marketData
-                .Where(x => !x.IsSkipped)
-                .SelectMany(x => x.Candles)
-                .Select(x => x.Date)
+                .Where(x =>
+                    !x.IsSkipped &&
+                    x.Candles != null &&
+                    x.Candles.Count > 0)
+                .Select(x => x.Candles[^1].Date)
                 .DefaultIfEmpty()
                 .Max();
 
@@ -235,6 +230,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
         var processedCount = 0;
         var detectedCount = 0;
         var skippedCount = 0;
+        var missedInDbCount = 0;
         var failedCount = 0;
 
         foreach (var item in marketData)
@@ -242,122 +238,139 @@ public sealed class TriangleAlertService : ITriangleAlertService
             cancellationToken.ThrowIfCancellationRequested();
 
             // -----------------------------------------------------
-            // SKIPPED SYMBOL
+            // PROCESS EACH TICKER INDEPENDENTLY
             // -----------------------------------------------------
-
-            if (item.IsSkipped)
-            {
-                skippedCount++;
-
-                _logger.LogDebug(
-                    "Triangle symbol skipped. " +
-                    "Exchange: {Exchange}, Ticker: {Ticker}, " +
-                    "Token: {Token}, Reason: {Reason}",
-                    exchange,
-                    item.Ticker,
-                    item.Token,
-                    item.SkipReason);
-
-                continue;
-            }
-
-            // -----------------------------------------------------
-            // NO CANDLES
-            // -----------------------------------------------------
-
-            if (item.Candles == null ||
-                item.Candles.Count == 0)
-            {
-                skippedCount++;
-
-                _logger.LogDebug(
-                    "Triangle symbol skipped. " +
-                    "Exchange: {Exchange}, Ticker: {Ticker}, " +
-                    "Token: {Token}, Reason: NoCandles",
-                    exchange,
-                    item.Ticker,
-                    item.Token);
-
-                continue;
-            }
-
-            // -----------------------------------------------------
-            // DETECTION
-            // -----------------------------------------------------
-
-            var symbolStopwatch =
-                Stopwatch.StartNew();
 
             try
             {
+                // -------------------------------------------------
+                // SKIPPED SYMBOL
+                // -------------------------------------------------
+
+                if (item.IsSkipped)
+                {
+                    // IMPORTANT:
+                    //
+                    // SymbolNotFoundInCache means the ticker was
+                    // configured/requested but was not loaded into
+                    // the EOD cache.
+                    //
+                    // These are counted separately as MissedInDb.
+                    if (item.SkipReason ==
+                        MarketDataSkipReason.SymbolNotFoundInCache)
+                    {
+                        missedInDbCount++;
+
+                        _logger.LogDebug(
+                            "Triangle symbol missing from EOD cache. " +
+                            "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                            "Reason: {Reason}",
+                            exchange,
+                            item.Ticker,
+                            item.SkipReason);
+                    }
+                    else
+                    {
+                        // All other skip reasons remain normal
+                        // skipped symbols.
+                        skippedCount++;
+
+                        _logger.LogDebug(
+                            "Triangle symbol skipped. " +
+                            "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                            "Reason: {Reason}",
+                            exchange,
+                            item.Ticker,
+                            item.SkipReason);
+                    }
+
+                    continue;
+                }
+
+                // -------------------------------------------------
+                // NO CANDLES
+                // -------------------------------------------------
+
+                if (item.Candles == null ||
+                    item.Candles.Count == 0)
+                {
+                    skippedCount++;
+
+                    _logger.LogDebug(
+                        "Triangle symbol skipped. " +
+                        "Exchange: {Exchange}, Ticker: {Ticker}, " +
+                        "Reason: NoCandles",
+                        exchange,
+                        item.Ticker);
+
+                    continue;
+                }
+
+                // -------------------------------------------------
+                // DETECTION
+                // -------------------------------------------------
+
                 processedCount++;
 
                 var detectionResult =
                     _triangleDetectionService.Detect(
                         item.Ticker,
-                        item.Token,
                         item.Candles);
 
-                symbolStopwatch.Stop();
+                // -------------------------------------------------
+                // ONLY ACTUAL PATTERNS ARE ADDED
+                // -------------------------------------------------
 
-                if (detectionResult != null)
+                if (detectionResult.IsPatternDetected)
                 {
-                    response.Data.Add(
-                        detectionResult);
+                    response.Data.Add(detectionResult);
 
                     detectedCount++;
 
                     _logger.LogDebug(
-                        "Triangle symbol processed. " +
+                        "Triangle pattern detected. " +
                         "Exchange: {Exchange}, Ticker: {Ticker}, " +
-                        "Token: {Token}, CandleCount: {CandleCount}, " +
-                        "Detected: true, ElapsedMs: {ElapsedMs}",
+                        "Pattern: {Pattern}, " +
+                        "CandleCount: {CandleCount}",
                         exchange,
                         item.Ticker,
-                        item.Token,
-                        item.Candles.Count,
-                        symbolStopwatch.ElapsedMilliseconds);
-                }
-                else
-                {
-                    _logger.LogDebug(
-                        "Triangle symbol processed. " +
-                        "Exchange: {Exchange}, Ticker: {Ticker}, " +
-                        "Token: {Token}, CandleCount: {CandleCount}, " +
-                        "Detected: false, ElapsedMs: {ElapsedMs}",
-                        exchange,
-                        item.Ticker,
-                        item.Token,
-                        item.Candles.Count,
-                        symbolStopwatch.ElapsedMilliseconds);
+                        detectionResult.Pattern,
+                        item.Candles.Count);
                 }
             }
             catch (OperationCanceledException)
             {
-                symbolStopwatch.Stop();
+                // -------------------------------------------------
+                // REQUEST WAS CANCELLED
+                // -------------------------------------------------
+                //
+                // Cancellation should stop the entire operation.
+                // -------------------------------------------------
+
                 throw;
             }
             catch (Exception ex)
             {
-                symbolStopwatch.Stop();
+                // -------------------------------------------------
+                // ONE TICKER FAILED
+                // -------------------------------------------------
+                //
+                // Do NOT throw here.
+                //
+                // failedCount is incremented and processing
+                // continues with the next ticker.
+                // -------------------------------------------------
 
                 failedCount++;
 
-                /*
-                 * Exception object is deliberately passed to LogDebug.
-                 */
-                _logger.LogDebug(
+                _logger.LogError(
                     ex,
                     "Triangle detection failed for symbol. " +
-                    "Exchange: {Exchange}, Ticker: {Ticker}, " +
-                    "Token: {Token}, Reason: DetectionException, " +
-                    "ElapsedMs: {ElapsedMs}",
+                    "Exchange: {Exchange}, Ticker: {Ticker}, ",
                     exchange,
-                    item.Ticker,
-                    item.Token,
-                    symbolStopwatch.ElapsedMilliseconds);
+                    item.Ticker);
 
-                // Continue to next symbol.
+                // Continue to next ticker.
             }
         }
 
@@ -374,6 +387,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
                 Processed = processedCount,
                 Detected = detectedCount,
                 Skipped = skippedCount,
+                MissedInDb = missedInDbCount,
                 Failed = failedCount,
                 ElapsedMs = stopwatch.ElapsedMilliseconds
             };
@@ -390,6 +404,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
             "Processed: {Processed}, " +
             "Detected: {Detected}, " +
             "Skipped: {Skipped}, " +
+            "MissedInDb: {MissedInDb}, " +
             "Failed: {Failed}, " +
             "ElapsedMs: {ElapsedMs}",
             exchange,
@@ -399,6 +414,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
             response.Summary.Processed,
             response.Summary.Detected,
             response.Summary.Skipped,
+            response.Summary.MissedInDb,
             response.Summary.Failed,
             response.Summary.ElapsedMs);
 

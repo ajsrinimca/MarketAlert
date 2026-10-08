@@ -10,6 +10,8 @@ public class TriangleAlertSummary
 
     public int Skipped { get; set; }
 
+    public int MissedInDb { get; set; }
+
     public int Failed { get; set; }
 
     public long ElapsedMs { get; set; }

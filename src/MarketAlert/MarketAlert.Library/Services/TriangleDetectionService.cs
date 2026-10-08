@@ -4,7 +4,6 @@ public interface ITriangleDetectionService
 {
     TriangleAlertItem Detect(
         string ticker,
-        long token,
         List<MarketCandle> candles);
 }
 
@@ -23,14 +22,16 @@ public class TriangleDetectionService : ITriangleDetectionService
 
     public TriangleAlertItem Detect(
         string ticker,
-        long token,
         List<MarketCandle> candles)
     {
         var result = new TriangleAlertItem
         {
             Ticker = ticker,
-            Token = token
         };
+
+        // ---------------------------------------------------------
+        // VALIDATE CANDLES
+        // ---------------------------------------------------------
 
         if (candles == null ||
             candles.Count < _settings.MinLookbackCandles)
@@ -38,12 +39,15 @@ public class TriangleDetectionService : ITriangleDetectionService
             return result;
         }
 
-        // Keep only the configured maximum number of candles.
-        candles = candles
-            .OrderByDescending(x => x.Date)
-            .Take(_settings.MaxLookbackCandles)
-            .OrderBy(x => x.Date)
-            .ToList();
+        // ---------------------------------------------------------
+        // FIND SWING POINTS
+        //
+        // MarketDataService has already:
+        // - selected the configured lookback candles
+        // - maintained chronological order
+        //
+        // Therefore we do NOT sort or Take() here.
+        // ---------------------------------------------------------
 
         var swingHighs = _swingPointService.FindSwingHighs(
             candles,
@@ -58,18 +62,25 @@ public class TriangleDetectionService : ITriangleDetectionService
         result.SwingHighCount = swingHighs.Count;
         result.SwingLowCount = swingLows.Count;
 
-        if (candles.Count > 0)
-        {
-            result.LastClose = candles[^1].Close;
+        // ---------------------------------------------------------
+        // LATEST CANDLE
+        // ---------------------------------------------------------
 
-            result.LastCandleDate = candles[^1].Date
-                .ToString("yyyy-MM-dd");
-        }
+        var lastCandle = candles[^1];
 
-        // Ascending Triangle
-        var ascending = DetectAscendingTriangle(
-            swingHighs,
-            swingLows);
+        result.LastClose = lastCandle.Close;
+
+        result.LastCandleDate =
+            lastCandle.Date.ToString("yyyy-MM-dd");
+
+        // ---------------------------------------------------------
+        // ASCENDING TRIANGLE
+        // ---------------------------------------------------------
+
+        var ascending =
+            DetectAscendingTriangle(
+                swingHighs,
+                swingLows);
 
         if (ascending.IsDetected)
         {
@@ -81,10 +92,14 @@ public class TriangleDetectionService : ITriangleDetectionService
             return result;
         }
 
-        // Descending Triangle
-        var descending = DetectDescendingTriangle(
-            swingHighs,
-            swingLows);
+        // ---------------------------------------------------------
+        // DESCENDING TRIANGLE
+        // ---------------------------------------------------------
+
+        var descending =
+            DetectDescendingTriangle(
+                swingHighs,
+                swingLows);
 
         if (descending.IsDetected)
         {
@@ -96,21 +111,37 @@ public class TriangleDetectionService : ITriangleDetectionService
             return result;
         }
 
+        // ---------------------------------------------------------
+        // NO PATTERN
+        // ---------------------------------------------------------
+
         return result;
     }
+
+    // =============================================================
+    // ASCENDING TRIANGLE
+    // =============================================================
 
     private TriangleDetectionResult DetectAscendingTriangle(
         List<SwingPoint> swingHighs,
         List<SwingPoint> swingLows)
     {
         if (swingHighs.Count < _settings.MinimumSwingHighs)
+        {
             return new TriangleDetectionResult();
+        }
 
         if (swingLows.Count < _settings.MinimumSwingLows)
+        {
             return new TriangleDetectionResult();
+        }
 
-        var qualifyingHighs = GetQualifyingLevels(
-            swingHighs);
+        // ---------------------------------------------------------
+        // FIND EQUAL / FLAT RESISTANCE LEVELS
+        // ---------------------------------------------------------
+
+        var qualifyingHighs =
+            GetQualifyingLevels(swingHighs);
 
         if (qualifyingHighs.Count <
             _settings.MinimumSwingHighs)
@@ -118,19 +149,23 @@ public class TriangleDetectionService : ITriangleDetectionService
             return new TriangleDetectionResult();
         }
 
-        var resistance = qualifyingHighs
-            .Average(x => x.Price);
+        var resistance =
+            qualifyingHighs.Average(x => x.Price);
 
-        var selectedLows = swingLows
-            .OrderBy(x => x.Index)
-            .ToList();
+        // ---------------------------------------------------------
+        // SWING LOWS MUST RISE PROGRESSIVELY
+        //
+        // SwingPointService returns points in candle/index order,
+        // so no OrderBy() is required here.
+        // ---------------------------------------------------------
 
-        if (!AreProgressivelyIncreasing(selectedLows))
+        if (!AreProgressivelyIncreasing(swingLows))
+        {
             return new TriangleDetectionResult();
+        }
 
-        var support = selectedLows
-            .Last()
-            .Price;
+        var support =
+            swingLows[^1].Price;
 
         return new TriangleDetectionResult
         {
@@ -140,18 +175,30 @@ public class TriangleDetectionService : ITriangleDetectionService
         };
     }
 
+    // =============================================================
+    // DESCENDING TRIANGLE
+    // =============================================================
+
     private TriangleDetectionResult DetectDescendingTriangle(
         List<SwingPoint> swingHighs,
         List<SwingPoint> swingLows)
     {
         if (swingHighs.Count < _settings.MinimumSwingHighs)
+        {
             return new TriangleDetectionResult();
+        }
 
         if (swingLows.Count < _settings.MinimumSwingLows)
+        {
             return new TriangleDetectionResult();
+        }
 
-        var qualifyingLows = GetQualifyingLevels(
-            swingLows);
+        // ---------------------------------------------------------
+        // FIND EQUAL / FLAT SUPPORT LEVELS
+        // ---------------------------------------------------------
+
+        var qualifyingLows =
+            GetQualifyingLevels(swingLows);
 
         if (qualifyingLows.Count <
             _settings.MinimumSwingLows)
@@ -159,19 +206,23 @@ public class TriangleDetectionService : ITriangleDetectionService
             return new TriangleDetectionResult();
         }
 
-        var support = qualifyingLows
-            .Average(x => x.Price);
+        var support =
+            qualifyingLows.Average(x => x.Price);
 
-        var selectedHighs = swingHighs
-            .OrderBy(x => x.Index)
-            .ToList();
+        // ---------------------------------------------------------
+        // SWING HIGHS MUST FALL PROGRESSIVELY
+        //
+        // SwingPointService returns points in candle/index order,
+        // so no OrderBy() is required here.
+        // ---------------------------------------------------------
 
-        if (!AreProgressivelyDecreasing(selectedHighs))
+        if (!AreProgressivelyDecreasing(swingHighs))
+        {
             return new TriangleDetectionResult();
+        }
 
-        var resistance = selectedHighs
-            .Last()
-            .Price;
+        var resistance =
+            swingHighs[^1].Price;
 
         return new TriangleDetectionResult
         {
@@ -181,12 +232,17 @@ public class TriangleDetectionService : ITriangleDetectionService
         };
     }
 
+    // =============================================================
+    // QUALIFYING LEVELS
+    // =============================================================
+
     private List<SwingPoint> GetQualifyingLevels(
         List<SwingPoint> points)
     {
-        var result = new List<SwingPoint>();
+        var result =
+            new List<SwingPoint>();
 
-        foreach (var point in points.OrderBy(x => x.Index))
+        foreach (var point in points)
         {
             if (result.Count == 0)
             {
@@ -194,7 +250,8 @@ public class TriangleDetectionService : ITriangleDetectionService
                 continue;
             }
 
-            var referencePrice = result[0].Price;
+            var referencePrice =
+                result[0].Price;
 
             if (IsEqualLevel(
                 point.Price,
@@ -207,14 +264,21 @@ public class TriangleDetectionService : ITriangleDetectionService
         return result;
     }
 
+    // =============================================================
+    // EQUAL LEVEL CHECK
+    // =============================================================
+
     private bool IsEqualLevel(
         decimal price1,
         decimal price2)
     {
         if (price1 == 0)
+        {
             return false;
+        }
 
-        var difference = Math.Abs(price1 - price2);
+        var difference =
+            Math.Abs(price1 - price2);
 
         var allowedDifference =
             Math.Abs(price1) *
@@ -223,15 +287,22 @@ public class TriangleDetectionService : ITriangleDetectionService
         return difference <= allowedDifference;
     }
 
+    // =============================================================
+    // RISING SWING LOWS
+    // =============================================================
+
     private static bool AreProgressivelyIncreasing(
         List<SwingPoint> points)
     {
         if (points.Count < 2)
-            return false;
-
-        for (int i = 1; i < points.Count; i++)
         {
-            if (points[i].Price <= points[i - 1].Price)
+            return false;
+        }
+
+        for (var i = 1; i < points.Count; i++)
+        {
+            if (points[i].Price <=
+                points[i - 1].Price)
             {
                 return false;
             }
@@ -240,15 +311,22 @@ public class TriangleDetectionService : ITriangleDetectionService
         return true;
     }
 
+    // =============================================================
+    // FALLING SWING HIGHS
+    // =============================================================
+
     private static bool AreProgressivelyDecreasing(
         List<SwingPoint> points)
     {
         if (points.Count < 2)
-            return false;
-
-        for (int i = 1; i < points.Count; i++)
         {
-            if (points[i].Price >= points[i - 1].Price)
+            return false;
+        }
+
+        for (var i = 1; i < points.Count; i++)
+        {
+            if (points[i].Price >=
+                points[i - 1].Price)
             {
                 return false;
             }

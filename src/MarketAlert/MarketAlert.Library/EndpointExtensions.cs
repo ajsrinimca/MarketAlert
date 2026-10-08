@@ -13,7 +13,7 @@ public static class EndpointExtension
         // --------------------------------------------------
 
         group.MapGet(
-            "MarketAlert/TriangleAlert/{exchange}/{groupName?}",
+            "TechnicalScreeners/TriangleAlert/{exchange}/{groupName?}",
             async (
                 string exchange,
                 string? groupName,
@@ -47,7 +47,7 @@ public static class EndpointExtension
         // --------------------------------------------------
 
         group.MapGet(
-            "MarketAlertLive/TriangleAlert/{exchange}/{groupName?}",
+            "TechnicalScreenersLive/TriangleAlert/{exchange}/{groupName?}",
             async (
                 string exchange,
                 string? groupName,

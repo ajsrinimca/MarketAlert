@@ -71,6 +71,16 @@ public sealed class EodHistoricalDataRepository
                 nameof(exchange))
         };
 
+        var dateAndTypePattern = normalizedExchange switch
+        {
+            "NSE" => "%NSECASH",
+            "BSE" => "%BSECASH",
+
+            _ => throw new ArgumentException(
+                $"Unsupported exchange: {exchange}",
+                nameof(exchange))
+        };
+
         // ---------------------------------------------------------
         // Normalize tickers
         // ---------------------------------------------------------
@@ -138,6 +148,7 @@ public sealed class EodHistoricalDataRepository
                         Date
                     FROM Dates
                     WHERE BarTypeId = 1
+                      AND DateAndType LIKE @DateAndTypePattern
                     ORDER BY Date DESC
                     LIMIT @CandleCount
                 ),
@@ -170,17 +181,17 @@ public sealed class EodHistoricalDataRepository
                     d.Date DESC;
                 """;
 
-            var rows =
-                await connection.QueryAsync<HistoricalCandleRow>(
-                    new CommandDefinition(
-                        sql,
-                        new
-                        {
-                            Exchange = exchangeId,
-                            Tickers = normalizedTickers,
-                            CandleCount = candleCount
-                        },
-                        cancellationToken: cancellationToken));
+            var parameters = new
+            {
+                Exchange = exchangeId,
+                Tickers = tickers,
+                CandleCount = candleCount,
+                DateAndTypePattern = dateAndTypePattern
+            };
+
+            var rows = await connection.QueryAsync<HistoricalCandleRow>(
+                sql,
+                parameters);
 
             // -----------------------------------------------------
             // Database call timing - END

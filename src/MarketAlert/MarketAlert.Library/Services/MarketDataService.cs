@@ -14,7 +14,10 @@ public sealed class MarketDataService : IMarketDataService
     private readonly IMarketStatusService _marketStatusService;
     private readonly IEodHistoryCache _eodHistoryCache;
     private readonly ILiveMarketDataService _liveMarketDataService;
+
     private readonly TriangleSettings _settings;
+    private readonly MarketAlertOptions _marketAlertOptions;
+
     private readonly ILogger<MarketDataService> _logger;
 
     public MarketDataService(
@@ -22,12 +25,14 @@ public sealed class MarketDataService : IMarketDataService
         IEodHistoryCache eodHistoryCache,
         ILiveMarketDataService liveMarketDataService,
         IOptions<TriangleSettings> options,
+        MarketAlertOptions marketAlertOptions,
         ILogger<MarketDataService> logger)
     {
         _marketStatusService = marketStatusService;
         _eodHistoryCache = eodHistoryCache;
         _liveMarketDataService = liveMarketDataService;
         _settings = options.Value;
+        _marketAlertOptions = marketAlertOptions;
         _logger = logger;
     }
 
@@ -81,30 +86,33 @@ public sealed class MarketDataService : IMarketDataService
         // ---------------------------------------------------------
         // RESOLVE TICKER UNIVERSE
         // ---------------------------------------------------------
+        //
+        // IMPORTANT:
+        //
+        // When tickers == null, this is an ALL request.
+        //
+        // The ALL universe MUST come from MarketAlertOptions
+        // because the cache contains only symbols that were found
+        // in the database.
+        //
+        // Example:
+        //
+        // JSON              = 3686
+        // DB/cache           = 3606
+        // Missing in DB      = 80
+        //
+        // Therefore Requested must remain 3686.
+        // ---------------------------------------------------------
 
         List<string> requestedTickers;
 
         if (tickers == null)
         {
-            if (!_eodHistoryCache.IsReady)
-            {
-                throw new InvalidOperationException(
-                    "EOD history cache is not ready.");
-            }
-
-            var exchangeHistory =
-                _eodHistoryCache.GetHistory(exchange);
-
             requestedTickers =
-                exchangeHistory
-                    .Keys
-                    .Where(x => !string.IsNullOrWhiteSpace(x))
-                    .Select(x => x.Trim().ToUpperInvariant())
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
+                GetConfiguredTickers(exchange);
 
             _logger.LogTrace(
-                "Ticker universe resolved from EOD cache. " +
+                "Ticker universe resolved from MarketAlertOptions. " +
                 "Exchange: {Exchange}, TickerCount: {TickerCount}",
                 exchange,
                 requestedTickers.Count);
@@ -182,6 +190,7 @@ public sealed class MarketDataService : IMarketDataService
 
         // ---------------------------------------------------------
         // LIVE REQUEST
+        // ---------------------------------------------------------
         //
         // Market status is required only for live requests.
         // Segment is always CASH.
@@ -283,6 +292,41 @@ public sealed class MarketDataService : IMarketDataService
         return closedResult;
     }
 
+    #region Ticker Universe
+
+    private List<string> GetConfiguredTickers(
+        string exchange)
+    {
+        IEnumerable<string> symbols;
+
+        if (exchange == "NSE")
+        {
+            symbols =
+                _marketAlertOptions.NseSymbols ??
+                new List<string>();
+        }
+        else if (exchange == "BSE")
+        {
+            symbols =
+                _marketAlertOptions.BseSymbols ??
+                new List<string>();
+        }
+        else
+        {
+            throw new ArgumentException(
+                $"Unsupported exchange: {exchange}",
+                nameof(exchange));
+        }
+
+        return symbols
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim().ToUpperInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    #endregion Ticker Universe
+
     #region Closed Market
 
     private List<MarketDataResult> GetClosedMarketData(
@@ -303,6 +347,10 @@ public sealed class MarketDataService : IMarketDataService
         var results =
             new List<MarketDataResult>(
                 tickers.Count);
+
+        // ---------------------------------------------------------
+        // CACHE NOT READY
+        // ---------------------------------------------------------
 
         if (!_eodHistoryCache.IsReady)
         {
@@ -334,18 +382,42 @@ public sealed class MarketDataService : IMarketDataService
             return results;
         }
 
+        // ---------------------------------------------------------
+        // GET EXCHANGE CACHE ONCE
+        // ---------------------------------------------------------
+        //
+        // IMPORTANT:
+        //
+        // Do not call GetHistory(exchange, ticker) just to determine
+        // whether the ticker exists.
+        //
+        // The exchange-level dictionary already contains all cached
+        // symbols.
+        //
+        // TryGetValue gives us:
+        //
+        // 1. SymbolNotFoundInCache
+        // 2. History
+        //
+        // in one lookup.
+        // ---------------------------------------------------------
+
+        var exchangeHistory =
+            _eodHistoryCache.GetHistory(exchange);
+
+        // ---------------------------------------------------------
+        // PROCESS TICKERS
+        // ---------------------------------------------------------
+
         foreach (var ticker in tickers)
         {
-            var history =
-                _eodHistoryCache.GetHistory(
-                    exchange,
-                    ticker);
-
             // -----------------------------------------------------
             // SYMBOL NOT FOUND IN CACHE
             // -----------------------------------------------------
 
-            if (history == null)
+            if (!exchangeHistory.TryGetValue(
+                    ticker,
+                    out var history))
             {
                 results.Add(
                     CreateSkippedResult(
@@ -367,7 +439,7 @@ public sealed class MarketDataService : IMarketDataService
             // NO HISTORY
             // -----------------------------------------------------
 
-            if (history.Count == 0)
+            if (history == null || history.Count == 0)
             {
                 results.Add(
                     CreateSkippedResult(
@@ -394,7 +466,6 @@ public sealed class MarketDataService : IMarketDataService
                 results.Add(
                     CreateSkippedResult(
                         ticker,
-                        history[0].Token,
                         MarketDataSkipReason.InsufficientCandles));
 
                 _logger.LogDebug(
@@ -425,12 +496,18 @@ public sealed class MarketDataService : IMarketDataService
                 new MarketDataResult
                 {
                     Ticker = ticker,
-                    Token = candles[0].Token,
                     Candles = candles,
                     SkipReason = MarketDataSkipReason.None
                 });
 
-            _logger.LogDebug(
+            // -----------------------------------------------------
+            // SUCCESSFUL SYMBOL LOG
+            //
+            // Trace instead of Debug because this can execute
+            // thousands of times per request.
+            // -----------------------------------------------------
+
+            _logger.LogTrace(
                 "Market data symbol processed. " +
                 "Exchange: {Exchange}, Ticker: {Ticker}, " +
                 "CandleCount: {CandleCount}",
@@ -453,7 +530,7 @@ public sealed class MarketDataService : IMarketDataService
         return results;
     }
 
-    #endregion
+    #endregion Closed Market
 
     #region Open Market
 
@@ -476,6 +553,10 @@ public sealed class MarketDataService : IMarketDataService
         var results =
             new List<MarketDataResult>(
                 tickers.Count);
+
+        // ---------------------------------------------------------
+        // CACHE NOT READY
+        // ---------------------------------------------------------
 
         if (!_eodHistoryCache.IsReady)
         {
@@ -508,6 +589,13 @@ public sealed class MarketDataService : IMarketDataService
         }
 
         // ---------------------------------------------------------
+        // GET EXCHANGE CACHE ONCE
+        // ---------------------------------------------------------
+
+        var exchangeHistory =
+            _eodHistoryCache.GetHistory(exchange);
+
+        // ---------------------------------------------------------
         // GET HISTORICAL DATA
         // ---------------------------------------------------------
 
@@ -517,12 +605,13 @@ public sealed class MarketDataService : IMarketDataService
 
         foreach (var ticker in tickers)
         {
-            var history =
-                _eodHistoryCache.GetHistory(
-                    exchange,
-                    ticker);
+            // -----------------------------------------------------
+            // SYMBOL NOT FOUND IN CACHE
+            // -----------------------------------------------------
 
-            if (history == null)
+            if (!exchangeHistory.TryGetValue(
+                    ticker,
+                    out var history))
             {
                 results.Add(
                     CreateSkippedResult(
@@ -540,7 +629,11 @@ public sealed class MarketDataService : IMarketDataService
                 continue;
             }
 
-            if (history.Count == 0)
+            // -----------------------------------------------------
+            // NO HISTORY
+            // -----------------------------------------------------
+
+            if (history == null || history.Count == 0)
             {
                 results.Add(
                     CreateSkippedResult(
@@ -558,12 +651,15 @@ public sealed class MarketDataService : IMarketDataService
                 continue;
             }
 
+            // -----------------------------------------------------
+            // INSUFFICIENT CANDLES
+            // -----------------------------------------------------
+
             if (history.Count < lookbackCandles)
             {
                 results.Add(
                     CreateSkippedResult(
                         ticker,
-                        history[0].Token,
                         MarketDataSkipReason.InsufficientCandles));
 
                 _logger.LogDebug(
@@ -586,7 +682,8 @@ public sealed class MarketDataService : IMarketDataService
                     history,
                     lookbackCandles);
 
-            _logger.LogDebug(
+            // High-volume success log is Trace.
+            _logger.LogTrace(
                 "Historical market data prepared for live analysis. " +
                 "Exchange: {Exchange}, Ticker: {Ticker}, " +
                 "CandleCount: {CandleCount}",
@@ -594,6 +691,10 @@ public sealed class MarketDataService : IMarketDataService
                 ticker,
                 historicalData[ticker].Count);
         }
+
+        // ---------------------------------------------------------
+        // NO VALID HISTORICAL SYMBOLS
+        // ---------------------------------------------------------
 
         if (historicalData.Count == 0)
         {
@@ -668,7 +769,6 @@ public sealed class MarketDataService : IMarketDataService
                 results.Add(
                     CreateSkippedResult(
                         ticker,
-                        candles[0].Token,
                         MarketDataSkipReason.LiveQuoteMissing));
 
                 _logger.LogDebug(
@@ -695,7 +795,6 @@ public sealed class MarketDataService : IMarketDataService
                 results.Add(
                     CreateSkippedResult(
                         ticker,
-                        candles[0].Token,
                         MarketDataSkipReason.InvalidLiveQuote));
 
                 _logger.LogDebug(
@@ -717,7 +816,12 @@ public sealed class MarketDataService : IMarketDataService
                 new MarketCandle
                 {
                     SymbolId = candles[0].SymbolId,
+
+                    // NOTE:
+                    // Token handling will be fixed separately.
+                    // Keeping the existing behavior for now.
                     Token = candles[0].Token,
+
                     Date = liveDate,
                     Open = quote.Open,
                     High = quote.High,
@@ -739,7 +843,7 @@ public sealed class MarketDataService : IMarketDataService
                 candles[sameDateIndex] =
                     liveCandle;
 
-                _logger.LogDebug(
+                _logger.LogTrace(
                     "Today's EOD candle replaced with live candle. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "Date: {Date:yyyy-MM-dd}",
@@ -752,7 +856,7 @@ public sealed class MarketDataService : IMarketDataService
                 candles.Add(
                     liveCandle);
 
-                _logger.LogDebug(
+                _logger.LogTrace(
                     "Live candle appended to historical data. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "Date: {Date:yyyy-MM-dd}",
@@ -774,12 +878,11 @@ public sealed class MarketDataService : IMarketDataService
                 new MarketDataResult
                 {
                     Ticker = ticker,
-                    Token = liveCandle.Token,
                     Candles = candles,
                     SkipReason = MarketDataSkipReason.None
                 });
 
-            _logger.LogDebug(
+            _logger.LogTrace(
                 "Live market data prepared for symbol. " +
                 "Exchange: {Exchange}, Ticker: {Ticker}, " +
                 "CandleCount: {CandleCount}",
@@ -802,7 +905,7 @@ public sealed class MarketDataService : IMarketDataService
         return results;
     }
 
-    #endregion
+    #endregion Open Market
 
     #region Validation
 
@@ -840,7 +943,7 @@ public sealed class MarketDataService : IMarketDataService
         return true;
     }
 
-    #endregion
+    #endregion Validation
 
     #region Helpers
 
@@ -869,18 +972,5 @@ public sealed class MarketDataService : IMarketDataService
         };
     }
 
-    private static MarketDataResult CreateSkippedResult(
-        string ticker,
-        long token,
-        MarketDataSkipReason reason)
-    {
-        return new MarketDataResult
-        {
-            Ticker = ticker,
-            Token = token,
-            SkipReason = reason
-        };
-    }
-
-    #endregion
+    #endregion Helpers
 }
