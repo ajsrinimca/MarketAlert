@@ -354,7 +354,7 @@ public sealed class MarketDataService : IMarketDataService
 
         if (!_eodHistoryCache.IsReady)
         {
-            _logger.LogDebug(
+            _logger.LogTrace(
                 "EOD cache is not ready. " +
                 "All requested symbols will be skipped. " +
                 "Exchange: {Exchange}, TickerCount: {TickerCount}",
@@ -424,7 +424,7 @@ public sealed class MarketDataService : IMarketDataService
                         ticker,
                         MarketDataSkipReason.SymbolNotFoundInCache));
 
-                _logger.LogDebug(
+                _logger.LogTrace(
                     "Market data symbol skipped. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "Reason: {Reason}",
@@ -446,7 +446,7 @@ public sealed class MarketDataService : IMarketDataService
                         ticker,
                         MarketDataSkipReason.NoHistory));
 
-                _logger.LogDebug(
+                _logger.LogTrace(
                     "Market data symbol skipped. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "Reason: {Reason}",
@@ -468,7 +468,7 @@ public sealed class MarketDataService : IMarketDataService
                         ticker,
                         MarketDataSkipReason.InsufficientCandles));
 
-                _logger.LogDebug(
+                _logger.LogTrace(
                     "Market data symbol skipped. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "AvailableCandles: {AvailableCandles}, " +
@@ -499,21 +499,6 @@ public sealed class MarketDataService : IMarketDataService
                     Candles = candles,
                     SkipReason = MarketDataSkipReason.None
                 });
-
-            // -----------------------------------------------------
-            // SUCCESSFUL SYMBOL LOG
-            //
-            // Trace instead of Debug because this can execute
-            // thousands of times per request.
-            // -----------------------------------------------------
-
-            _logger.LogTrace(
-                "Market data symbol processed. " +
-                "Exchange: {Exchange}, Ticker: {Ticker}, " +
-                "CandleCount: {CandleCount}",
-                exchange,
-                ticker,
-                candles.Count);
         }
 
         stopwatch.Stop();
@@ -560,7 +545,7 @@ public sealed class MarketDataService : IMarketDataService
 
         if (!_eodHistoryCache.IsReady)
         {
-            _logger.LogDebug(
+            _logger.LogTrace(
                 "EOD cache is not ready for live analysis. " +
                 "All requested symbols will be skipped. " +
                 "Exchange: {Exchange}, TickerCount: {TickerCount}",
@@ -618,7 +603,7 @@ public sealed class MarketDataService : IMarketDataService
                         ticker,
                         MarketDataSkipReason.SymbolNotFoundInCache));
 
-                _logger.LogDebug(
+                _logger.LogTrace(
                     "Market data symbol skipped. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "Reason: {Reason}",
@@ -640,7 +625,7 @@ public sealed class MarketDataService : IMarketDataService
                         ticker,
                         MarketDataSkipReason.NoHistory));
 
-                _logger.LogDebug(
+                _logger.LogTrace(
                     "Market data symbol skipped. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "Reason: {Reason}",
@@ -662,7 +647,7 @@ public sealed class MarketDataService : IMarketDataService
                         ticker,
                         MarketDataSkipReason.InsufficientCandles));
 
-                _logger.LogDebug(
+                _logger.LogTrace(
                     "Market data symbol skipped. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "AvailableCandles: {AvailableCandles}, " +
@@ -771,7 +756,7 @@ public sealed class MarketDataService : IMarketDataService
                         ticker,
                         MarketDataSkipReason.LiveQuoteMissing));
 
-                _logger.LogDebug(
+                _logger.LogTrace(
                     "Market data symbol skipped during live merge. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "Reason: {Reason}",
@@ -797,7 +782,7 @@ public sealed class MarketDataService : IMarketDataService
                         ticker,
                         MarketDataSkipReason.InvalidLiveQuote));
 
-                _logger.LogDebug(
+                _logger.LogTrace(
                     "Market data symbol skipped during live merge. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "Reason: {Reason}",

@@ -16,9 +16,6 @@ public sealed class EodHistoryCacheWarmupService : IHostedService
     public async Task StartAsync(
         CancellationToken cancellationToken)
     {
-        _logger.LogTrace(
-            "Starting EOD history cache warm-up...");
-
         try
         {
             using var scope =
@@ -30,9 +27,6 @@ public sealed class EodHistoryCacheWarmupService : IHostedService
 
             await service.LoadHistoryToCacheAsync(
                 cancellationToken);
-
-            _logger.LogTrace(
-                "EOD history cache warm-up completed.");
         }
         catch (Exception ex)
         {

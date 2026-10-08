@@ -70,20 +70,6 @@ public sealed class SegmentRepository
                 stopwatch.ElapsedMilliseconds,
                 result.Count);
 
-            // ---------------------------------------------------------
-            // Log actual database response
-            // ---------------------------------------------------------
-
-            foreach (var segment in result)
-            {
-                _logger.LogTrace(
-                    "Segment precision response. " +
-                    "SegmentCode: {SegmentCode}, " +
-                    "Precision: {Precision}",
-                    segment.SegmentCode,
-                    segment.Precision);
-            }
-
             return result;
         }
         catch (Exception ex)

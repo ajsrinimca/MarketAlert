@@ -115,9 +115,8 @@ public sealed class EodHistoricalDataRepository
 
         _logger.LogTrace(
             "EOD database call started. " +
-            "Exchange: {Exchange}, StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}",
-            normalizedExchange,
-            dbStartTime);
+            "Exchange: {Exchange}",
+            normalizedExchange);
 
         try
         {
@@ -130,11 +129,6 @@ public sealed class EodHistoricalDataRepository
                     DatabaseConstants.EODData);
 
             await connection.OpenAsync(cancellationToken);
-
-            _logger.LogDebug(
-                "Connected to EOD database. " +
-                "Exchange: {Exchange}",
-                normalizedExchange);
 
             // -----------------------------------------------------
             // Query
@@ -283,25 +277,8 @@ public sealed class EodHistoricalDataRepository
 
                 if (candles.Count < candleCount)
                 {
-                    _logger.LogWarning(
+                    _logger.LogTrace(
                         "EOD history is insufficient. " +
-                        "Exchange: {Exchange}, Ticker: {Ticker}, " +
-                        "SymbolId: {SymbolId}, AvailableCandles: {AvailableCandles}, " +
-                        "RequestedCandles: {RequestedCandles}, " +
-                        "OldestDate: {OldestDate:yyyy-MM-dd}, " +
-                        "LatestDate: {LatestDate:yyyy-MM-dd}",
-                        normalizedExchange,
-                        ticker,
-                        symbolId,
-                        candles.Count,
-                        candleCount,
-                        oldestDate,
-                        latestDate);
-                }
-                else
-                {
-                    _logger.LogDebug(
-                        "EOD history loaded. " +
                         "Exchange: {Exchange}, Ticker: {Ticker}, " +
                         "SymbolId: {SymbolId}, AvailableCandles: {AvailableCandles}, " +
                         "RequestedCandles: {RequestedCandles}, " +

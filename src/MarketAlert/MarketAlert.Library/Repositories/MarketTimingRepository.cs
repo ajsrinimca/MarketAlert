@@ -71,26 +71,6 @@ public sealed class MarketTimingRepository
                 stopwatch.ElapsedMilliseconds,
                 result.Count);
 
-            // ---------------------------------------------------------
-            // Log actual database response
-            // ---------------------------------------------------------
-
-            foreach (var timing in result)
-            {
-                _logger.LogTrace(
-                    "Market timing response. " +
-                    "Exchange: {Exchange}, " +
-                    "Segment: {Segment}, " +
-                    "Status: {Status}, " +
-                    "StartTime: {StartTime}, " +
-                    "EndTime: {EndTime}",
-                    timing.Exchange,
-                    timing.Segment,
-                    timing.Status,
-                    timing.StartTime,
-                    timing.EndTime);
-            }
-
             return result;
         }
         catch (Exception ex)

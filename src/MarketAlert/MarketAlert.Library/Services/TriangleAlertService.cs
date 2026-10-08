@@ -261,7 +261,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
                     {
                         missedInDbCount++;
 
-                        _logger.LogDebug(
+                        _logger.LogTrace(
                             "Triangle symbol missing from EOD cache. " +
                             "Exchange: {Exchange}, Ticker: {Ticker}, " +
                             "Reason: {Reason}",
@@ -275,7 +275,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
                         // skipped symbols.
                         skippedCount++;
 
-                        _logger.LogDebug(
+                        _logger.LogTrace(
                             "Triangle symbol skipped. " +
                             "Exchange: {Exchange}, Ticker: {Ticker}, " +
                             "Reason: {Reason}",
@@ -296,7 +296,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
                 {
                     skippedCount++;
 
-                    _logger.LogDebug(
+                    _logger.LogTrace(
                         "Triangle symbol skipped. " +
                         "Exchange: {Exchange}, Ticker: {Ticker}, " +
                         "Reason: NoCandles",
@@ -326,16 +326,6 @@ public sealed class TriangleAlertService : ITriangleAlertService
                     response.Data.Add(detectionResult);
 
                     detectedCount++;
-
-                    _logger.LogDebug(
-                        "Triangle pattern detected. " +
-                        "Exchange: {Exchange}, Ticker: {Ticker}, " +
-                        "Pattern: {Pattern}, " +
-                        "CandleCount: {CandleCount}",
-                        exchange,
-                        item.Ticker,
-                        detectionResult.Pattern,
-                        item.Candles.Count);
                 }
             }
             catch (OperationCanceledException)
