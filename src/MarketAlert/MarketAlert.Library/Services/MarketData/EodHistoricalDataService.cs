@@ -1,4 +1,4 @@
-﻿namespace MarketAlert.Library.Services;
+﻿namespace MarketAlert.Library.Services.MarketData;
 
 public interface IEodHistoricalDataService
 {

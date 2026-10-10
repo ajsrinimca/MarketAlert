@@ -1,10 +1,16 @@
-﻿namespace MarketAlert.Library;
+﻿using MarketAlert.Library.Services.Alerts;
+
+namespace MarketAlert.Library;
 
 public static partial class ServiceExtensions
 {
     private static IServiceCollection AddAlerts(
         this IServiceCollection services)
     {
+        services.AddScoped<
+            ISwingPointService,
+            SwingPointService>();
+
         services.AddScoped<
             ITriangleDetectionService,
             TriangleDetectionService>();

@@ -1,4 +1,4 @@
-﻿namespace MarketAlert.Library.Services;
+﻿namespace MarketAlert.Library.Services.Alerts;
 
 public interface ISymmetricalTriangleDetectionService
 {
@@ -7,7 +7,7 @@ public interface ISymmetricalTriangleDetectionService
         List<MarketCandle> candles);
 }
 
-public class SymmetricalTriangleDetectionService
+internal sealed class SymmetricalTriangleDetectionService
     : ISymmetricalTriangleDetectionService
 {
     private readonly ISwingPointService _swingPointService;
@@ -36,10 +36,9 @@ public class SymmetricalTriangleDetectionService
             return result;
         }
 
-        // Always calculate using chronological order.
-        var orderedCandles = candles
-            .OrderBy(x => x.Date)
-            .ToList();
+        // MarketDataService supplies candles in chronological order.
+        // Both triangle detectors use the same input sequence and indexes.
+        var orderedCandles = candles;
 
         var swingHighs =
             _swingPointService.FindSwingHighs(

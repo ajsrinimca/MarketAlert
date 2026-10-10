@@ -13,7 +13,7 @@ public static partial class ServiceExtensions
         return builder;
     }
 
-    public static IServiceCollection AddMarketAlertService(
+    public static IServiceCollection AddMarketAlert(
         this IServiceCollection services,
         IConfiguration configuration,
         IReadOnlyList<string> nseSymbols,

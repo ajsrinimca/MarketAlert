@@ -1,4 +1,6 @@
-﻿namespace MarketAlert.Library;
+﻿using MarketAlert.Library.Services.MarketData;
+
+namespace MarketAlert.Library;
 
 public static partial class ServiceExtensions
 {
@@ -12,22 +14,6 @@ public static partial class ServiceExtensions
         services.AddScoped<
             IMarketDataService,
             MarketDataService>();
-
-        // --------------------------------------------------
-        // Triangle detection
-        // --------------------------------------------------
-
-        services.AddScoped<
-            ISwingPointService,
-            SwingPointService>();
-
-        services.AddScoped<
-            ITriangleDetectionService,
-            TriangleDetectionService>();
-
-        services.AddScoped<
-            ITriangleAlertService,
-            TriangleAlertService>();
 
         return services;
     }

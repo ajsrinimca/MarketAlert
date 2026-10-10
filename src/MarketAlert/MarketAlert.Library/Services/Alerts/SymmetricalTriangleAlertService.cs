@@ -1,4 +1,7 @@
-﻿namespace MarketAlert.Library.Services;
+﻿using MarketAlert.Library.Services.MarketData;
+using MarketAlert.Library.Services.MarketSymbols;
+
+namespace MarketAlert.Library.Services.Alerts;
 
 public interface ISymmetricalTriangleAlertService
 {
@@ -41,21 +44,16 @@ public sealed class SymmetricalTriangleAlertService
         // VALIDATE REQUEST
         // ---------------------------------------------------------
 
-        if (string.IsNullOrWhiteSpace(exchange))
+        if (!ExchangeValidator.TryParse(
+                exchange,
+                out var exchangeType))
         {
             throw new ArgumentException(
-                "Exchange is required.",
+                "Exchange must be NSE or BSE.",
                 nameof(exchange));
         }
 
-        exchange = exchange.Trim().ToUpperInvariant();
-
-        if (exchange != "NSE" && exchange != "BSE")
-        {
-            throw new ArgumentException(
-                $"Unsupported exchange: {exchange}",
-                nameof(exchange));
-        }
+        exchange = exchangeType.ToString();
 
         group = string.IsNullOrWhiteSpace(group)
             ? null
@@ -212,95 +210,17 @@ public sealed class SymmetricalTriangleAlertService
                 latestCandleDate.ToString("yyyy-MM-dd");
         }
 
-        // ---------------------------------------------------------
-        // COUNTERS
-        // ---------------------------------------------------------
+        var processing = AlertProcessor.Process(
+            marketData,
+            exchange,
+            group,
+            _detectionService.Detect,
+            result => result.IsPatternDetected,
+            _logger,
+            "Symmetrical Triangle",
+            cancellationToken);
 
-        var processedCount = 0;
-        var detectedCount = 0;
-        var skippedCount = 0;
-        var missedInDbCount = 0;
-        var failedCount = 0;
-
-        // ---------------------------------------------------------
-        // PROCESS SYMBOLS
-        // ---------------------------------------------------------
-
-        foreach (var item in marketData)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            try
-            {
-                // -------------------------------------------------
-                // SKIPPED SYMBOL
-                // -------------------------------------------------
-
-                if (item.IsSkipped)
-                {
-                    if (item.SkipReason ==
-                        MarketDataSkipReason.SymbolNotFoundInCache)
-                    {
-                        missedInDbCount++;
-                    }
-                    else
-                    {
-                        skippedCount++;
-                    }
-
-                    continue;
-                }
-
-                // -------------------------------------------------
-                // NO CANDLES
-                // -------------------------------------------------
-
-                if (item.Candles == null ||
-                    item.Candles.Count == 0)
-                {
-                    skippedCount++;
-                    continue;
-                }
-
-                // -------------------------------------------------
-                // DETECTION
-                // -------------------------------------------------
-
-                processedCount++;
-
-                var detectionResult =
-                    _detectionService.Detect(
-                        item.Ticker,
-                        item.Candles);
-
-                // -------------------------------------------------
-                // ADD DETECTED PATTERNS ONLY
-                // -------------------------------------------------
-
-                if (detectionResult.IsPatternDetected)
-                {
-                    response.Data.Add(detectionResult);
-                    detectedCount++;
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                failedCount++;
-
-                _logger.LogError(
-                    ex,
-                    "Symmetrical Triangle detection failed. " +
-                    "Exchange: {Exchange}, Group: {Group}, " +
-                    "Ticker: {Ticker}",
-                    exchange,
-                    group ?? "ALL",
-                    item.Ticker);
-            }
-        }
+        response.Data = processing.DetectedItems;
 
         // ---------------------------------------------------------
         // ALERT SUMMARY
@@ -311,11 +231,11 @@ public sealed class SymmetricalTriangleAlertService
         response.Summary = new AlertSummary
         {
             Requested = requestedCount,
-            Processed = processedCount,
-            Detected = detectedCount,
-            Skipped = skippedCount,
-            MissedInDb = missedInDbCount,
-            Failed = failedCount,
+            Processed = processing.Processed,
+            Detected = processing.Detected,
+            Skipped = processing.Skipped,
+            MissedInDb = processing.MissedInDb,
+            Failed = processing.Failed,
             ElapsedMs = stopwatch.ElapsedMilliseconds
         };
 

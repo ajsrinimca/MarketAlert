@@ -1,6 +1,9 @@
-﻿namespace MarketAlert.Library.HostedServices;
+﻿using MarketAlert.Library.Services.MarketData;
 
-public sealed class EodHistoryCacheWarmupService : IHostedService
+namespace MarketAlert.Library.HostedServices;
+
+public sealed class EodHistoryCacheWarmupService
+    : IHostedService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<EodHistoryCacheWarmupService> _logger;

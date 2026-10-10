@@ -2,7 +2,7 @@
 
 public class TriangleAlertResponse
 {
-    public DateTime TimeStamp { get; set; }
+    public DateTimeOffset TimeStamp { get; set; }
 
     public string Exchange { get; set; } = string.Empty;
 

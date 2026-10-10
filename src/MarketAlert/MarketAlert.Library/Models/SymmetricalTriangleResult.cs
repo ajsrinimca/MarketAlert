@@ -28,5 +28,5 @@ public class SymmetricalTriangleResult
 
     public decimal LastClose { get; set; }
 
-    public string? LastCandleDate { get; set; }
+    public string LastCandleDate { get; set; } = string.Empty;
 }

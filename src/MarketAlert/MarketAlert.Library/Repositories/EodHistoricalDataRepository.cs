@@ -33,10 +33,10 @@ public sealed class EodHistoricalDataRepository
         // Validation
         // ---------------------------------------------------------
 
-        if (string.IsNullOrWhiteSpace(exchange))
+        if (!ExchangeValidator.TryParse(exchange, out var exchangeType))
         {
             throw new ArgumentException(
-                "Exchange is required.",
+                "Exchange must be NSE or BSE.",
                 nameof(exchange));
         }
 
@@ -58,23 +58,12 @@ public sealed class EodHistoricalDataRepository
         // Normalize exchange
         // ---------------------------------------------------------
 
-        var normalizedExchange =
-            exchange.Trim().ToUpperInvariant();
+        var normalizedExchange = exchangeType.ToString();
 
-        var exchangeId = normalizedExchange switch
+        var (exchangeId, dateAndTypePattern) = normalizedExchange switch
         {
-            "NSE" => 1,
-            "BSE" => 2,
-
-            _ => throw new ArgumentException(
-                $"Unsupported exchange: {exchange}",
-                nameof(exchange))
-        };
-
-        var dateAndTypePattern = normalizedExchange switch
-        {
-            "NSE" => "%NSECASH",
-            "BSE" => "%BSECASH",
+            "NSE" => (1, "%NSECASH"),
+            "BSE" => (2, "%BSECASH"),
 
             _ => throw new ArgumentException(
                 $"Unsupported exchange: {exchange}",
@@ -178,14 +167,16 @@ public sealed class EodHistoricalDataRepository
             var parameters = new
             {
                 Exchange = exchangeId,
-                Tickers = tickers,
+                Tickers = normalizedTickers,
                 CandleCount = candleCount,
                 DateAndTypePattern = dateAndTypePattern
             };
 
             var rows = await connection.QueryAsync<HistoricalCandleRow>(
-                sql,
-                parameters);
+                new CommandDefinition(
+                    sql,
+                    parameters,
+                    cancellationToken: cancellationToken));
 
             // -----------------------------------------------------
             // Database call timing - END
@@ -322,13 +313,19 @@ public sealed class EodHistoricalDataRepository
 
             return result;
         }
-        catch
+        catch (OperationCanceledException)
+        {
+            dbStopwatch.Stop();
+            throw;
+        }
+        catch (Exception ex)
         {
             dbStopwatch.Stop();
 
             var dbEndTime = DateTime.Now;
 
             _logger.LogError(
+                ex,
                 "EOD database call failed. " +
                 "Exchange: {Exchange}, StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}, " +
                 "EndTime: {EndTime:yyyy-MM-dd HH:mm:ss.fff}, " +

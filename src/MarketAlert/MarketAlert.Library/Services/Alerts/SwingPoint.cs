@@ -1,6 +1,6 @@
-﻿namespace MarketAlert.Library.Models;
+namespace MarketAlert.Library.Services.Alerts;
 
-public class SwingPoint
+internal sealed class SwingPoint
 {
     public int Index { get; set; }
 

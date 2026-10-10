@@ -1,6 +1,6 @@
-﻿namespace MarketAlert.Library.Services;
+﻿namespace MarketAlert.Library.Services.Alerts;
 
-public interface ISwingPointService
+internal interface ISwingPointService
 {
     List<SwingPoint> FindSwingHighs(
         List<MarketCandle> candles,
@@ -13,7 +13,7 @@ public interface ISwingPointService
         int rightBars);
 }
 
-public class SwingPointService : ISwingPointService
+internal sealed class SwingPointService : ISwingPointService
 {
     public List<SwingPoint> FindSwingHighs(
         List<MarketCandle> candles,

@@ -1,4 +1,7 @@
 {
+  "MarketData": {
+    "EodCandleCount": 120
+  },
   "Triangle": {
     "MinLookbackCandles": 20,
     "MaxLookbackCandles": 50,

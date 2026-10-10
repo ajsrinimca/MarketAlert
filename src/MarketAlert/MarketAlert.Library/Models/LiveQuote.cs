@@ -4,8 +4,6 @@ public class LiveQuote
 {
     public string Ticker { get; set; } = string.Empty;
 
-    public string Token { get; set; } = string.Empty;
-
     public decimal Open { get; set; }
 
     public decimal High { get; set; }

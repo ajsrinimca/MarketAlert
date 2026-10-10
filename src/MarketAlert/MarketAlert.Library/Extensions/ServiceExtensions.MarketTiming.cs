@@ -1,4 +1,5 @@
 ﻿using MarketAlert.Library.HostedServices;
+using MarketAlert.Library.Services.MarketStatus;
 
 namespace MarketAlert.Library;
 

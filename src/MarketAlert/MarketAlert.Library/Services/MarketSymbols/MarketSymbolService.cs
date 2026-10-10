@@ -1,4 +1,4 @@
-﻿namespace MarketAlert.Library.Services;
+﻿namespace MarketAlert.Library.Services.MarketSymbols;
 
 public interface IMarketSymbolService
 {

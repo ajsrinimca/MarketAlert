@@ -1,4 +1,5 @@
 using MarketAlert.Library;
+using MarketAlert.Library.Endpoints;
 using NLog;
 using NLog.Config;
 using NLog.Web;
@@ -54,7 +55,7 @@ var bseSymbols = await LoadTickersAsync(
 // MarketAlert services
 // --------------------------------------------------
 
-builder.Services.AddMarketAlertService(
+builder.Services.AddMarketAlert(
     builder.Configuration,
     nseSymbols,
     bseSymbols);

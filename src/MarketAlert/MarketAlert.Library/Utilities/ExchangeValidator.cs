@@ -13,9 +13,24 @@ public static class ExchangeValidator
             return false;
         }
 
-        return Enum.TryParse(
-            value.Trim(),
-            ignoreCase: true,
-            out exchange);
+        var normalizedValue = value.Trim();
+
+        if (normalizedValue.Equals(
+                nameof(ExchangeType.NSE),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            exchange = ExchangeType.NSE;
+            return true;
+        }
+
+        if (normalizedValue.Equals(
+                nameof(ExchangeType.BSE),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            exchange = ExchangeType.BSE;
+            return true;
+        }
+
+        return false;
     }
 }

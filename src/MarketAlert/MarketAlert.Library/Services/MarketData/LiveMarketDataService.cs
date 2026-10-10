@@ -1,4 +1,4 @@
-﻿namespace MarketAlert.Library.Services;
+﻿namespace MarketAlert.Library.Services.MarketData;
 
 public interface ILiveMarketDataService
 {
@@ -13,20 +13,20 @@ public sealed class LiveMarketDataService
     private readonly HttpClient _httpClient;
     private readonly ISegmentPrecisionCache _segmentPrecisionCache;
     private readonly ILiveMarketResponseCache _liveMarketResponseCache;
-    private readonly IConfiguration _configuration;
+    private readonly LiveMarketSettings _settings;
     private readonly ILogger<LiveMarketDataService> _logger;
 
     public LiveMarketDataService(
         HttpClient httpClient,
         ISegmentPrecisionCache segmentPrecisionCache,
         ILiveMarketResponseCache liveMarketResponseCache,
-        IConfiguration configuration,
+        IOptions<LiveMarketSettings> options,
         ILogger<LiveMarketDataService> logger)
     {
         _httpClient = httpClient;
         _segmentPrecisionCache = segmentPrecisionCache;
         _liveMarketResponseCache = liveMarketResponseCache;
-        _configuration = configuration;
+        _settings = options.Value;
         _logger = logger;
     }
 
@@ -34,20 +34,42 @@ public sealed class LiveMarketDataService
         string exchange,
         CancellationToken cancellationToken = default)
     {
+        if (!ExchangeValidator.TryParse(exchange, out var exchangeType))
+        {
+            throw new ArgumentException(
+                "Exchange must be NSE or BSE.",
+                nameof(exchange));
+        }
+
+        exchange = exchangeType.ToString();
+
+        if (_liveMarketResponseCache.TryGet(exchange, out var cachedResponse))
+        {
+            return cachedResponse;
+        }
+
+        var fetchLock = _liveMarketResponseCache.GetFetchLock(exchange);
+        await fetchLock.WaitAsync(cancellationToken);
+
+        try
+        {
+            return await FetchLiveQuotesAsync(exchange, cancellationToken);
+        }
+        finally
+        {
+            fetchLock.Release();
+        }
+    }
+
+    private async Task<LiveMarketResponse> FetchLiveQuotesAsync(
+        string exchange,
+        CancellationToken cancellationToken)
+    {
         // ---------------------------------------------------------
         // Read cache duration from configuration
         // ---------------------------------------------------------
 
-        var cacheMinutes =
-            _configuration.GetValue(
-                "LiveMarket:IntradayCacheMinutes",
-                15);
-
-        if (cacheMinutes <= 0)
-        {
-            throw new InvalidOperationException(
-                "LiveMarket:IntradayCacheMinutes must be greater than zero.");
-        }
+        var cacheMinutes = _settings.IntradayCacheMinutes;
 
         var cacheExpiration =
             TimeSpan.FromMinutes(cacheMinutes);

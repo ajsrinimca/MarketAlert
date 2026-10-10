@@ -1,4 +1,4 @@
-﻿namespace MarketAlert.Library.Services;
+﻿namespace MarketAlert.Library.Services.Alerts;
 
 public interface ITriangleDetectionService
 {
@@ -7,7 +7,7 @@ public interface ITriangleDetectionService
         List<MarketCandle> candles);
 }
 
-public class TriangleDetectionService : ITriangleDetectionService
+internal sealed class TriangleDetectionService : ITriangleDetectionService
 {
     private readonly ISwingPointService _swingPointService;
     private readonly TriangleSettings _settings;
@@ -333,5 +333,14 @@ public class TriangleDetectionService : ITriangleDetectionService
         }
 
         return true;
+    }
+
+    private sealed class TriangleDetectionResult
+    {
+        public bool IsDetected { get; init; }
+
+        public decimal Resistance { get; init; }
+
+        public decimal Support { get; init; }
     }
 }

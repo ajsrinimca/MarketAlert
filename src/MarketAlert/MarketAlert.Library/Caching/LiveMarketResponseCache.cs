@@ -14,6 +14,9 @@ public interface ILiveMarketResponseCache
     void Remove(
         string exchange);
 
+    SemaphoreSlim GetFetchLock(
+        string exchange);
+
     void Clear();
 }
 
@@ -22,14 +25,17 @@ public sealed class LiveMarketResponseCache
 {
     private sealed class CacheEntry
     {
-        public LiveMarketResponse Response { get; init; }
+        public LiveMarketResponse Response { get; init; } = null!;
 
-        public DateTime ExpiryTime { get; init; }
+        public DateTimeOffset ExpiryTime { get; init; }
     }
 
     private readonly object _lock = new();
 
     private readonly Dictionary<string, CacheEntry> _cache =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly Dictionary<string, SemaphoreSlim> _fetchLocks =
         new(StringComparer.OrdinalIgnoreCase);
 
     public bool TryGet(
@@ -53,7 +59,7 @@ public sealed class LiveMarketResponseCache
                 return false;
             }
 
-            if (DateTime.Now >= entry.ExpiryTime)
+            if (DateTimeOffset.UtcNow >= entry.ExpiryTime)
             {
                 _cache.Remove(key);
 
@@ -94,15 +100,37 @@ public sealed class LiveMarketResponseCache
         var key =
             exchange.Trim().ToUpperInvariant();
 
-        var entry = new CacheEntry
+        lock (_lock)
         {
-            Response = response,
-            ExpiryTime = DateTime.Now.Add(expiration)
-        };
+            _cache[key] = new CacheEntry
+            {
+                Response = response,
+                ExpiryTime = DateTimeOffset.UtcNow.Add(expiration)
+            };
+        }
+    }
+
+    public SemaphoreSlim GetFetchLock(
+        string exchange)
+    {
+        if (string.IsNullOrWhiteSpace(exchange))
+        {
+            throw new ArgumentException(
+                "Exchange is required.",
+                nameof(exchange));
+        }
+
+        var key = exchange.Trim().ToUpperInvariant();
 
         lock (_lock)
         {
-            _cache[key] = entry;
+            if (!_fetchLocks.TryGetValue(key, out var fetchLock))
+            {
+                fetchLock = new SemaphoreSlim(1, 1);
+                _fetchLocks[key] = fetchLock;
+            }
+
+            return fetchLock;
         }
     }
 

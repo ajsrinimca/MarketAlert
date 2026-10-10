@@ -1,4 +1,6 @@
-﻿namespace MarketAlert.Library;
+﻿using MarketAlert.Library.Services.MarketData;
+
+namespace MarketAlert.Library;
 
 public static partial class ServiceExtensions
 {
@@ -6,6 +8,26 @@ public static partial class ServiceExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services
+            .AddOptions<LiveMarketSettings>()
+            .Bind(configuration.GetSection("LiveMarket"))
+            .Validate(
+                settings =>
+                    Uri.TryCreate(
+                        settings.BaseUrl,
+                        UriKind.Absolute,
+                        out var baseUri) &&
+                    (baseUri.Scheme == Uri.UriSchemeHttp ||
+                     baseUri.Scheme == Uri.UriSchemeHttps),
+                "LiveMarket:BaseUrl must be an absolute HTTP or HTTPS URL.")
+            .Validate(
+                settings => settings.TimeoutSeconds > 0,
+                "LiveMarket:TimeoutSeconds must be greater than zero.")
+            .Validate(
+                settings => settings.IntradayCacheMinutes > 0,
+                "LiveMarket:IntradayCacheMinutes must be greater than zero.")
+            .ValidateOnStart();
+
         // --------------------------------------------------
         // Live response cache
         // --------------------------------------------------
@@ -21,28 +43,16 @@ public static partial class ServiceExtensions
         services.AddHttpClient<
             ILiveMarketDataService,
             LiveMarketDataService>(
-            client =>
+            (serviceProvider, client) =>
             {
-                var baseUrl =
-                    configuration["LiveMarket:BaseUrl"];
+                var settings = serviceProvider
+                    .GetRequiredService<IOptions<LiveMarketSettings>>()
+                    .Value;
 
-                if (string.IsNullOrWhiteSpace(baseUrl))
-                {
-                    throw new InvalidOperationException(
-                        "LiveMarket:BaseUrl is not configured.");
-                }
-
-                client.BaseAddress =
-                    new Uri(baseUrl);
-
-                var timeoutSeconds =
-                    configuration.GetValue<int>(
-                        "LiveMarket:TimeoutSeconds",
-                        30);
-
+                client.BaseAddress = new Uri(settings.BaseUrl);
                 client.Timeout =
                     TimeSpan.FromSeconds(
-                        timeoutSeconds);
+                        settings.TimeoutSeconds);
             });
 
         return services;

@@ -1,8 +1,8 @@
-﻿namespace MarketAlert.Library.Services;
+﻿namespace MarketAlert.Library.Services.MarketStatus;
 
 public interface IMarketStatusService
 {
-    Task<MarketStatus> GetMarketStatusAsync(
+    Task<MarketAlert.Library.Models.MarketStatus> GetMarketStatusAsync(
         string exchange,
         string segment,
         CancellationToken cancellationToken = default);
@@ -22,15 +22,15 @@ public sealed class MarketStatusService
         _logger = logger;
     }
 
-    public Task<MarketStatus> GetMarketStatusAsync(
+    public Task<MarketAlert.Library.Models.MarketStatus> GetMarketStatusAsync(
         string exchange,
         string segment,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(exchange))
+        if (!ExchangeValidator.TryParse(exchange, out var exchangeType))
         {
             throw new ArgumentException(
-                "Exchange is required.",
+                "Exchange must be NSE or BSE.",
                 nameof(exchange));
         }
 
@@ -41,8 +41,7 @@ public sealed class MarketStatusService
                 nameof(segment));
         }
 
-        exchange =
-            exchange.Trim().ToUpperInvariant();
+        exchange = exchangeType.ToString();
 
         segment =
             segment.Trim().ToUpperInvariant();
@@ -125,7 +124,7 @@ public sealed class MarketStatusService
                 currentTime);
 
             return Task.FromResult(
-                new MarketStatus
+                new MarketAlert.Library.Models.MarketStatus
                 {
                     Exchange = exchange,
                     Segment = segment,
@@ -148,7 +147,7 @@ public sealed class MarketStatusService
                 "OPEN",
                 StringComparison.OrdinalIgnoreCase);
 
-        var result = new MarketStatus
+        var result = new MarketAlert.Library.Models.MarketStatus
         {
             Exchange = matchingTiming.Exchange,
             Segment = matchingTiming.Segment,
