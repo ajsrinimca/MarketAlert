@@ -76,6 +76,74 @@ public static class EndpointExtension
                 return Results.Ok(result);
             });
 
+        // --------------------------------------------------
+        // Symmetrical Triangle Alert (EOD)
+        // --------------------------------------------------
+
+        group.MapGet(
+            "TechnicalScreeners/SymmetricalTriangleAlert/{exchange}/{groupName?}",
+            async (
+                string exchange,
+                string? groupName,
+                ISymmetricalTriangleAlertService symmetricalTriangleAlertService,
+                CancellationToken cancellationToken) =>
+            {
+                if (!ExchangeValidator.TryParse(
+                        exchange,
+                        out var exchangeType))
+                {
+                    return Results.BadRequest(new
+                    {
+                        message =
+                            $"Invalid exchange '{exchange}'. " +
+                            "Supported exchanges are NSE and BSE."
+                    });
+                }
+
+                var result =
+                    await symmetricalTriangleAlertService.GetAlertsAsync(
+                        exchangeType.ToString(),
+                        groupName,
+                        includeLive: false,
+                        cancellationToken);
+
+                return Results.Ok(result);
+            });
+
+        // --------------------------------------------------
+        // Live / Symmetrical Triangle Alert (EOD)
+        // --------------------------------------------------
+
+        group.MapGet(
+            "TechnicalScreenersLive/SymmetricalTriangleAlert/{exchange}/{groupName?}",
+            async (
+                string exchange,
+                string? groupName,
+                ISymmetricalTriangleAlertService symmetricalTriangleAlertService,
+                CancellationToken cancellationToken) =>
+            {
+                if (!ExchangeValidator.TryParse(
+                        exchange,
+                        out var exchangeType))
+                {
+                    return Results.BadRequest(new
+                    {
+                        message =
+                            $"Invalid exchange '{exchange}'. " +
+                            "Supported exchanges are NSE and BSE."
+                    });
+                }
+
+                var result =
+                    await symmetricalTriangleAlertService.GetAlertsAsync(
+                        exchangeType.ToString(),
+                        groupName,
+                        includeLive: true,
+                        cancellationToken);
+
+                return Results.Ok(result);
+            });
+
         return endpoints;
     }
 }

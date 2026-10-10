@@ -1,6 +1,6 @@
 ﻿namespace MarketAlert.Library.Models;
 
-public class TriangleAlertSummary
+public class AlertSummary
 {
     public int Requested { get; set; }
 

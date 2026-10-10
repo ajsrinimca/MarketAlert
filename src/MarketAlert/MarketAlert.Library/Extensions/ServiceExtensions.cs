@@ -38,6 +38,8 @@ public static partial class ServiceExtensions
 
         services.AddLiveMarket(configuration);
 
+        services.AddAlerts();
+
         return services;
     }
 }

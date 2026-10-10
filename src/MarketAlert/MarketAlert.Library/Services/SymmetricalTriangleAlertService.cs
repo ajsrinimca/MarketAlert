@@ -1,34 +1,35 @@
 ﻿namespace MarketAlert.Library.Services;
 
-public interface ITriangleAlertService
+public interface ISymmetricalTriangleAlertService
 {
-    Task<TriangleAlertResponse> GetTriangleAlertsAsync(
+    Task<SymmetricalTriangleResponse> GetAlertsAsync(
         string exchange,
         string? group,
         bool includeLive,
         CancellationToken cancellationToken = default);
 }
 
-public sealed class TriangleAlertService : ITriangleAlertService
+public sealed class SymmetricalTriangleAlertService
+    : ISymmetricalTriangleAlertService
 {
     private readonly IMarketDataService _marketDataService;
     private readonly IMarketSymbolService _marketSymbolService;
-    private readonly ITriangleDetectionService _triangleDetectionService;
-    private readonly ILogger<TriangleAlertService> _logger;
+    private readonly ISymmetricalTriangleDetectionService _detectionService;
+    private readonly ILogger<SymmetricalTriangleAlertService> _logger;
 
-    public TriangleAlertService(
+    public SymmetricalTriangleAlertService(
         IMarketDataService marketDataService,
         IMarketSymbolService marketSymbolService,
-        ITriangleDetectionService triangleDetectionService,
-        ILogger<TriangleAlertService> logger)
+        ISymmetricalTriangleDetectionService detectionService,
+        ILogger<SymmetricalTriangleAlertService> logger)
     {
         _marketDataService = marketDataService;
         _marketSymbolService = marketSymbolService;
-        _triangleDetectionService = triangleDetectionService;
+        _detectionService = detectionService;
         _logger = logger;
     }
 
-    public async Task<TriangleAlertResponse> GetTriangleAlertsAsync(
+    public async Task<SymmetricalTriangleResponse> GetAlertsAsync(
         string exchange,
         string? group,
         bool includeLive,
@@ -47,18 +48,18 @@ public sealed class TriangleAlertService : ITriangleAlertService
                 nameof(exchange));
         }
 
-        exchange = exchange
-            .Trim()
-            .ToUpperInvariant();
+        exchange = exchange.Trim().ToUpperInvariant();
 
-        if (!string.IsNullOrWhiteSpace(group))
+        if (exchange != "NSE" && exchange != "BSE")
         {
-            group = group.Trim();
+            throw new ArgumentException(
+                $"Unsupported exchange: {exchange}",
+                nameof(exchange));
         }
-        else
-        {
-            group = null;
-        }
+
+        group = string.IsNullOrWhiteSpace(group)
+            ? null
+            : group.Trim();
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -67,7 +68,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
         // ---------------------------------------------------------
 
         _logger.LogTrace(
-            "Triangle alert analysis started. " +
+            "Symmetrical Triangle analysis started. " +
             "Exchange: {Exchange}, Group: {Group}, " +
             "IncludeLive: {IncludeLive}",
             exchange,
@@ -80,7 +81,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
 
         List<string>? tickers = null;
 
-        if (!string.IsNullOrWhiteSpace(group))
+        if (group != null)
         {
             var groupStopwatch = Stopwatch.StartNew();
 
@@ -89,16 +90,16 @@ public sealed class TriangleAlertService : ITriangleAlertService
                     group,
                     cancellationToken);
 
-            groupStopwatch.Stop();
-
             tickers = tickers
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .Select(x => x.Trim().ToUpperInvariant())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
+            groupStopwatch.Stop();
+
             _logger.LogTrace(
-                "Group ticker resolution completed. " +
+                "Symmetrical Triangle group resolution completed. " +
                 "Exchange: {Exchange}, Group: {Group}, " +
                 "TickerCount: {TickerCount}, ElapsedMs: {ElapsedMs}",
                 exchange,
@@ -106,49 +107,42 @@ public sealed class TriangleAlertService : ITriangleAlertService
                 tickers.Count,
                 groupStopwatch.ElapsedMilliseconds);
 
+            // -----------------------------------------------------
+            // EMPTY GROUP
+            // -----------------------------------------------------
+
             if (tickers.Count == 0)
             {
                 stopwatch.Stop();
 
-                var emptyResponse =
-                    new TriangleAlertResponse
+                var emptyResponse = new SymmetricalTriangleResponse
+                {
+                    TimeStamp = DateTimeOffset.Now,
+                    Exchange = exchange,
+                    Data = new List<SymmetricalTriangleResult>(),
+                    Summary = new AlertSummary
                     {
-                        TimeStamp = DateTime.Now,
-                        Exchange = exchange,
-                        Data = new List<TriangleAlertItem>(),
-                        Summary = new AlertSummary
-                        {
-                            Requested = 0,
-                            Processed = 0,
-                            Detected = 0,
-                            Skipped = 0,
-                            MissedInDb = 0,
-                            Failed = 0,
-                            ElapsedMs = stopwatch.ElapsedMilliseconds
-                        }
-                    };
+                        Requested = 0,
+                        Processed = 0,
+                        Detected = 0,
+                        Skipped = 0,
+                        MissedInDb = 0,
+                        Failed = 0,
+                        ElapsedMs = stopwatch.ElapsedMilliseconds
+                    }
+                };
 
                 _logger.LogTrace(
-                    "Triangle alert analysis summary. " +
+                    "Symmetrical Triangle analysis summary. " +
                     "Exchange: {Exchange}, Group: {Group}, " +
                     "IncludeLive: {IncludeLive}, " +
-                    "Requested: {Requested}, " +
-                    "Processed: {Processed}, " +
-                    "Detected: {Detected}, " +
-                    "Skipped: {Skipped}, " +
-                    "MissedInDb: {MissedInDb}, " +
-                    "Failed: {Failed}, " +
+                    "Requested: 0, Processed: 0, Detected: 0, " +
+                    "Skipped: 0, MissedInDb: 0, Failed: 0, " +
                     "ElapsedMs: {ElapsedMs}",
                     exchange,
                     group,
                     includeLive,
-                    emptyResponse.Summary.Requested,
-                    emptyResponse.Summary.Processed,
-                    emptyResponse.Summary.Detected,
-                    emptyResponse.Summary.Skipped,
-                    emptyResponse.Summary.MissedInDb,
-                    emptyResponse.Summary.Failed,
-                    emptyResponse.Summary.ElapsedMs);
+                    stopwatch.ElapsedMilliseconds);
 
                 return emptyResponse;
             }
@@ -172,7 +166,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
         marketDataStopwatch.Stop();
 
         _logger.LogTrace(
-            "Market data retrieval completed. " +
+            "Symmetrical Triangle market data retrieval completed. " +
             "Exchange: {Exchange}, Group: {Group}, " +
             "IncludeLive: {IncludeLive}, ResultCount: {ResultCount}, " +
             "ElapsedMs: {ElapsedMs}",
@@ -186,22 +180,17 @@ public sealed class TriangleAlertService : ITriangleAlertService
         // RESPONSE
         // ---------------------------------------------------------
 
-        var response =
-            new TriangleAlertResponse
-            {
-                TimeStamp = DateTime.Now,
-                Exchange = exchange,
-                Data = new List<TriangleAlertItem>()
-            };
+        var response = new SymmetricalTriangleResponse
+        {
+            TimeStamp = DateTimeOffset.Now,
+            Exchange = exchange,
+            Data = new List<SymmetricalTriangleResult>()
+        };
 
-        // ---------------------------------------------------------
-        // REQUESTED
-        // ---------------------------------------------------------
-
-        var requestedCount =
-            tickers != null
-                ? tickers.Count
-                : marketData.Count;
+        // MarketDataService resolves the configured JSON ticker
+        // universe when tickers is null and returns a result for
+        // every requested ticker, including skipped symbols.
+        var requestedCount = marketData.Count;
 
         // ---------------------------------------------------------
         // LTD
@@ -213,7 +202,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
                     !x.IsSkipped &&
                     x.Candles != null &&
                     x.Candles.Count > 0)
-                .Select(x => x.Candles[^1].Date)
+                .Select(x => x.Candles![^1].Date)
                 .DefaultIfEmpty()
                 .Max();
 
@@ -224,7 +213,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
         }
 
         // ---------------------------------------------------------
-        // PROCESS SYMBOLS
+        // COUNTERS
         // ---------------------------------------------------------
 
         var processedCount = 0;
@@ -233,13 +222,13 @@ public sealed class TriangleAlertService : ITriangleAlertService
         var missedInDbCount = 0;
         var failedCount = 0;
 
+        // ---------------------------------------------------------
+        // PROCESS SYMBOLS
+        // ---------------------------------------------------------
+
         foreach (var item in marketData)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            // -----------------------------------------------------
-            // PROCESS EACH TICKER INDEPENDENTLY
-            // -----------------------------------------------------
 
             try
             {
@@ -249,39 +238,14 @@ public sealed class TriangleAlertService : ITriangleAlertService
 
                 if (item.IsSkipped)
                 {
-                    // IMPORTANT:
-                    //
-                    // SymbolNotFoundInCache means the ticker was
-                    // configured/requested but was not loaded into
-                    // the EOD cache.
-                    //
-                    // These are counted separately as MissedInDb.
                     if (item.SkipReason ==
                         MarketDataSkipReason.SymbolNotFoundInCache)
                     {
                         missedInDbCount++;
-
-                        _logger.LogTrace(
-                            "Triangle symbol missing from EOD cache. " +
-                            "Exchange: {Exchange}, Ticker: {Ticker}, " +
-                            "Reason: {Reason}",
-                            exchange,
-                            item.Ticker,
-                            item.SkipReason);
                     }
                     else
                     {
-                        // All other skip reasons remain normal
-                        // skipped symbols.
                         skippedCount++;
-
-                        _logger.LogTrace(
-                            "Triangle symbol skipped. " +
-                            "Exchange: {Exchange}, Ticker: {Ticker}, " +
-                            "Reason: {Reason}",
-                            exchange,
-                            item.Ticker,
-                            item.SkipReason);
                     }
 
                     continue;
@@ -295,14 +259,6 @@ public sealed class TriangleAlertService : ITriangleAlertService
                     item.Candles.Count == 0)
                 {
                     skippedCount++;
-
-                    _logger.LogTrace(
-                        "Triangle symbol skipped. " +
-                        "Exchange: {Exchange}, Ticker: {Ticker}, " +
-                        "Reason: NoCandles",
-                        exchange,
-                        item.Ticker);
-
                     continue;
                 }
 
@@ -313,89 +269,67 @@ public sealed class TriangleAlertService : ITriangleAlertService
                 processedCount++;
 
                 var detectionResult =
-                    _triangleDetectionService.Detect(
+                    _detectionService.Detect(
                         item.Ticker,
                         item.Candles);
 
                 // -------------------------------------------------
-                // ONLY ACTUAL PATTERNS ARE ADDED
+                // ADD DETECTED PATTERNS ONLY
                 // -------------------------------------------------
 
                 if (detectionResult.IsPatternDetected)
                 {
                     response.Data.Add(detectionResult);
-
                     detectedCount++;
                 }
             }
             catch (OperationCanceledException)
             {
-                // -------------------------------------------------
-                // REQUEST WAS CANCELLED
-                // -------------------------------------------------
-                //
-                // Cancellation should stop the entire operation.
-                // -------------------------------------------------
-
                 throw;
             }
             catch (Exception ex)
             {
-                // -------------------------------------------------
-                // ONE TICKER FAILED
-                // -------------------------------------------------
-                //
-                // Do NOT throw here.
-                //
-                // failedCount is incremented and processing
-                // continues with the next ticker.
-                // -------------------------------------------------
-
                 failedCount++;
 
                 _logger.LogError(
                     ex,
-                    "Triangle detection failed for symbol. " +
-                    "Exchange: {Exchange}, Ticker: {Ticker}, ",
+                    "Symmetrical Triangle detection failed. " +
+                    "Exchange: {Exchange}, Group: {Group}, " +
+                    "Ticker: {Ticker}",
                     exchange,
+                    group ?? "ALL",
                     item.Ticker);
-
-                // Continue to next ticker.
             }
         }
 
         // ---------------------------------------------------------
-        // REQUEST SUMMARY
+        // ALERT SUMMARY
         // ---------------------------------------------------------
 
         stopwatch.Stop();
 
-        response.Summary =
-            new AlertSummary
-            {
-                Requested = requestedCount,
-                Processed = processedCount,
-                Detected = detectedCount,
-                Skipped = skippedCount,
-                MissedInDb = missedInDbCount,
-                Failed = failedCount,
-                ElapsedMs = stopwatch.ElapsedMilliseconds
-            };
+        response.Summary = new AlertSummary
+        {
+            Requested = requestedCount,
+            Processed = processedCount,
+            Detected = detectedCount,
+            Skipped = skippedCount,
+            MissedInDb = missedInDbCount,
+            Failed = failedCount,
+            ElapsedMs = stopwatch.ElapsedMilliseconds
+        };
 
         // ---------------------------------------------------------
-        // ONE TRACE SUMMARY LINE
+        // SUMMARY LOG
         // ---------------------------------------------------------
 
         _logger.LogTrace(
-            "Triangle alert analysis summary. " +
+            "Symmetrical Triangle analysis summary. " +
             "Exchange: {Exchange}, Group: {Group}, " +
             "IncludeLive: {IncludeLive}, " +
-            "Requested: {Requested}, " +
-            "Processed: {Processed}, " +
-            "Detected: {Detected}, " +
-            "Skipped: {Skipped}, " +
-            "MissedInDb: {MissedInDb}, " +
-            "Failed: {Failed}, " +
+            "Requested: {Requested}, Processed: {Processed}, " +
+            "Detected: {Detected}, Skipped: {Skipped}, " +
+            "MissedInDb: {MissedInDb}, Failed: {Failed}, " +
             "ElapsedMs: {ElapsedMs}",
             exchange,
             group ?? "ALL",
