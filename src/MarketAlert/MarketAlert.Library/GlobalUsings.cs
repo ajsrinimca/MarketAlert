@@ -5,7 +5,7 @@ global using MarketAlert.Library.Constants;
 global using MarketAlert.Library.Infrastructure;
 global using MarketAlert.Library.Models;
 global using MarketAlert.Library.Repositories;
-global using MarketAlert.Library.Services;
+global using MarketAlert.Library.Services.MarketData;
 global using MarketAlert.Library.Utilities;
 global using Microsoft.AspNetCore.Builder;
 global using Microsoft.AspNetCore.Http;

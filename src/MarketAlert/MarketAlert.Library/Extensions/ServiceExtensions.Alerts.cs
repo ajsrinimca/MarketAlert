@@ -27,6 +27,14 @@ public static partial class ServiceExtensions
             ISymmetricalTriangleAlertService,
             SymmetricalTriangleAlertService>();
 
+        services.AddScoped<
+            IFlagPennantDetectionService,
+            FlagPennantDetectionService>();
+
+        services.AddScoped<
+            IFlagPennantAlertService,
+            FlagPennantAlertService>();
+
         return services;
     }
 }
