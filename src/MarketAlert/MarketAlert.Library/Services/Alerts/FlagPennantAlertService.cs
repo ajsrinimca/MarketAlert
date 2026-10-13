@@ -1,10 +1,12 @@
+using MarketAlert.Library.Services.MarketSymbols;
+
 namespace MarketAlert.Library.Services.Alerts;
 
 public interface IFlagPennantAlertService
 {
     Task<FlagPennantResponse> GetAlertsAsync(
         string exchange,
-        string? ticker,
+        string? group,
         bool includeLive,
         CancellationToken cancellationToken = default);
 }
@@ -12,18 +14,25 @@ public interface IFlagPennantAlertService
 public sealed class FlagPennantAlertService : IFlagPennantAlertService
 {
     private readonly IMarketDataService _marketDataService;
+    private readonly IMarketSymbolService _marketSymbolService;
     private readonly IFlagPennantDetectionService _detectionService;
     private readonly ILogger<FlagPennantAlertService> _logger;
 
     public FlagPennantAlertService(
         IMarketDataService marketDataService,
+        IMarketSymbolService marketSymbolService,
         IFlagPennantDetectionService detectionService,
         ILogger<FlagPennantAlertService> logger)
-    { _marketDataService = marketDataService; _detectionService = detectionService; _logger = logger; }
+    {
+        _marketDataService = marketDataService;
+        _marketSymbolService = marketSymbolService;
+        _detectionService = detectionService;
+        _logger = logger;
+    }
 
     public async Task<FlagPennantResponse> GetAlertsAsync(
         string exchange,
-        string? ticker,
+        string? group,
         bool includeLive,
         CancellationToken cancellationToken = default)
     {
@@ -35,20 +44,32 @@ public sealed class FlagPennantAlertService : IFlagPennantAlertService
         }
 
         exchange = exchangeType.ToString();
-        ticker = string.IsNullOrWhiteSpace(ticker)
+        group = string.IsNullOrWhiteSpace(group)
             ? null
-            : ticker.Trim().ToUpperInvariant();
+            : group.Trim();
 
         _logger.LogInformation(
             "Flag and Pennant analysis started. " +
-            "Exchange: {Exchange}, Ticker: {Ticker}",
+            "Exchange: {Exchange}, Group: {Group}, IncludeLive: {IncludeLive}",
             exchange,
-            ticker ?? "ALL");
+            group ?? "ALL",
+            includeLive);
 
         var stopwatch = Stopwatch.StartNew();
-        var tickers = ticker == null
-            ? null
-            : new List<string> { ticker };
+        List<string>? tickers = null;
+
+        if (group != null)
+        {
+            tickers = await _marketSymbolService.GetTickersByGroupAsync(
+                group,
+                cancellationToken);
+
+            tickers = tickers
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim().ToUpperInvariant())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
 
         var marketData =
             await _marketDataService.GetMarketDataAsync(
@@ -63,10 +84,11 @@ public sealed class FlagPennantAlertService : IFlagPennantAlertService
             Exchange = exchange
         };
 
+        var requestedCount = tickers?.Count ?? marketData.Count;
+
         var latestCandleDate = marketData
             .Where(x => !x.IsSkipped && x.Candles.Count > 0)
-            .SelectMany(x => x.Candles)
-            .Select(x => x.Date)
+            .Select(x => x.Candles[^1].Date)
             .DefaultIfEmpty()
             .Max();
 
@@ -76,43 +98,34 @@ public sealed class FlagPennantAlertService : IFlagPennantAlertService
                 latestCandleDate.ToString("yyyy-MM-dd");
         }
 
-        var processed = 0;
-        var skipped = 0;
+        var processing = AlertProcessor.Process(
+            marketData,
+            exchange,
+            group,
+            _detectionService.Detect,
+            result => result.IsPatternDetected,
+            _logger,
+            "Flag and Pennant",
+            cancellationToken);
 
-        foreach (var item in marketData)
+        response.Data = processing.DetectedItems;
+
+        foreach (var result in response.Data)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (item.IsSkipped || item.Candles.Count < 20)
-            {
-                skipped++;
-                continue;
-            }
-
-            var candles = item.Candles.OrderBy(x => x.Date).ToList();
-            processed++;
-            var result = _detectionService.Detect(item.Ticker, candles);
-
-            if (result.IsPatternDetected)
-            {
-                response.Data.Add(result);
-
-                _logger.LogInformation(
-                    "Flag or Pennant detected. " +
-                    "Ticker: {Ticker}, PatternType: {PatternType}",
-                    result.Ticker,
-                    result.PatternType);
-            }
+            _logger.LogInformation(
+                "Flag or Pennant detected. Ticker: {Ticker}, PatternType: {PatternType}",
+                result.Ticker,
+                result.PatternType);
         }
 
         response.Summary = new AlertSummary
         {
-            Requested = marketData.Count,
-            Processed = processed,
-            Detected = response.Data.Count,
-            Skipped = skipped,
-            MissedInDb = 0,
-            Failed = 0,
+            Requested = requestedCount,
+            Processed = processing.Processed,
+            Detected = processing.Detected,
+            Skipped = processing.Skipped,
+            MissedInDb = processing.MissedInDb,
+            Failed = processing.Failed,
             ElapsedMs = stopwatch.ElapsedMilliseconds
         };
 

@@ -9,6 +9,13 @@ public interface IMarketDataService
         List<string>? tickers,
         bool includeLive,
         CancellationToken cancellationToken = default);
+
+    Task<List<MarketDataResult>> GetMarketDataAsync(
+        string exchange,
+        List<string>? tickers,
+        bool includeLive,
+        int lookbackCandles,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed partial class MarketDataService : IMarketDataService
@@ -44,6 +51,16 @@ public sealed partial class MarketDataService : IMarketDataService
         bool includeLive,
         CancellationToken cancellationToken = default)
     {
+        return await GetMarketDataAsync(exchange, tickers, includeLive, _settings.DefaultLookbackCandles, cancellationToken);
+    }
+
+    public async Task<List<MarketDataResult>> GetMarketDataAsync(
+        string exchange,
+        List<string>? tickers,
+        bool includeLive,
+        int lookbackCandles,
+        CancellationToken cancellationToken = default)
+    {
         var stopwatch = Stopwatch.StartNew();
 
         // ---------------------------------------------------------
@@ -64,9 +81,6 @@ public sealed partial class MarketDataService : IMarketDataService
         // ---------------------------------------------------------
         // READ LOOKBACK CONFIGURATION
         // ---------------------------------------------------------
-
-        var lookbackCandles =
-            _settings.DefaultLookbackCandles;
 
         if (lookbackCandles <= 0)
         {

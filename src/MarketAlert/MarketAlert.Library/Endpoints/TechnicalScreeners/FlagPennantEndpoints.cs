@@ -9,11 +9,11 @@ internal static class FlagPennantEndpoints
     {
         MapFlagPennantAlert(
             group,
-            "TechnicalScreeners/FlagPennantBreakout/{exchange}/{ticker?}",
+            "TechnicalScreeners/FlagPennantBreakout/{exchange}/{groupName?}",
             includeLive: false);
         MapFlagPennantAlert(
             group,
-            "TechnicalScreenersLive/FlagPennantBreakout/{exchange}/{ticker?}",
+            "TechnicalScreenersLive/FlagPennantBreakout/{exchange}/{groupName?}",
             includeLive: true);
 
         return group;
@@ -26,7 +26,7 @@ internal static class FlagPennantEndpoints
     {
         group.MapGet(routePattern, async (
             string exchange,
-            string? ticker,
+            string? groupName,
             IFlagPennantAlertService service,
             CancellationToken cancellationToken) =>
         {
@@ -45,7 +45,7 @@ internal static class FlagPennantEndpoints
             var result =
                 await service.GetAlertsAsync(
                     exchangeType.ToString(),
-                    ticker,
+                    groupName,
                     includeLive,
                     cancellationToken);
             return Results.Ok(result);

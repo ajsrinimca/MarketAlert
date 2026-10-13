@@ -138,6 +138,14 @@ internal sealed class SymmetricalTriangleDetectionService
                 lastSwingLow.Price,
                 latestIndex);
 
+        // Reject a triangle whose projected boundaries have already met
+        // or crossed at the latest candle.
+        if (lowerTrendline <= 0 ||
+            upperTrendline <= lowerTrendline)
+        {
+            return result;
+        }
+
         result.UpperTrendline = upperTrendline;
         result.LowerTrendline = lowerTrendline;
 

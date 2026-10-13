@@ -206,7 +206,6 @@ internal sealed class FlagPennantDetectionService : IFlagPennantDetectionService
     {
         return new FlagPennantResult
         {
-            Token = candles[^1].Token,
             Pattern = pattern,
             PatternType = patternType,
             IsPatternDetected = true,
@@ -230,7 +229,6 @@ internal sealed class FlagPennantDetectionService : IFlagPennantDetectionService
         IReadOnlyList<MarketCandle> candles)
     {
         result.Ticker = ticker;
-        result.Token = candles[^1].Token;
         result.LastCandleDate =
             candles[^1].Date.ToString("yyyy-MM-dd");
 

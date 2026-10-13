@@ -12,6 +12,13 @@
     "MinimumSwingHighs": 2,
     "MinimumSwingLows": 2
   },
+  "RectangleBreakout": {
+    "LookbackCandles": 30
+  },
+  "RoundingBottom": {
+    "LookbackCandles": 90,
+    "MiddleSmaFlatnessPercent": 2.0
+  },
   "LiveMarket": {
     "BaseUrl": "https://dartstock-uatserv.upstox.com/",
     "TimeoutSeconds": 30,

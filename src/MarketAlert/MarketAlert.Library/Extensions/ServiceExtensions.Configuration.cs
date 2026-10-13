@@ -57,6 +57,23 @@ public static partial class ServiceExtensions
                 "Triangle settings contain invalid lookback, swing, or level values.")
             .ValidateOnStart();
 
+        services.AddOptions<RectangleBreakoutSettings>()
+            .Bind(configuration.GetSection("RectangleBreakout"))
+            .Validate(settings => settings.LookbackCandles >= 20 && settings.LookbackCandles < eodCandleCount,
+                "RectangleBreakout:LookbackCandles must be at least 20 and leave one candle available for breakout evaluation within MarketData:EodCandleCount.")
+            .ValidateOnStart();
+
+        services.AddOptions<RoundingBottomSettings>()
+            .Bind(configuration.GetSection("RoundingBottom"))
+            .Validate(
+                settings =>
+                    settings.LookbackCandles >= 60 &&
+                    settings.LookbackCandles <= 120 &&
+                    settings.LookbackCandles <= eodCandleCount &&
+                    settings.MiddleSmaFlatnessPercent >= 0,
+                "RoundingBottom settings require a 60–120 candle lookback within the EOD cache and a non-negative middle SMA flatness percentage.")
+            .ValidateOnStart();
+
         return services;
     }
 

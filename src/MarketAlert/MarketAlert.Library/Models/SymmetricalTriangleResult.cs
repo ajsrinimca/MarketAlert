@@ -4,8 +4,6 @@ public class SymmetricalTriangleResult
 {
     public string Ticker { get; set; } = string.Empty;
 
-    public long Token { get; set; }
-
     public string Pattern { get; set; } = "SymmetricalTriangle";
 
     public bool IsPatternDetected { get; set; }

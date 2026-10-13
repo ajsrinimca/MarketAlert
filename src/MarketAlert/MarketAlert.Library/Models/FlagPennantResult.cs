@@ -4,8 +4,6 @@ public class FlagPennantResult
 {
     public string Ticker { get; set; } = string.Empty;
 
-    public long Token { get; set; }
-
     public string Pattern { get; set; } = string.Empty;
 
     public string PatternType { get; set; } = string.Empty;

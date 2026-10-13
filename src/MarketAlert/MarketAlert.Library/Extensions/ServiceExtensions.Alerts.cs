@@ -35,6 +35,11 @@ public static partial class ServiceExtensions
             IFlagPennantAlertService,
             FlagPennantAlertService>();
 
+        services.AddScoped<IRectangleBreakoutDetectionService, RectangleBreakoutDetectionService>();
+        services.AddScoped<IRectangleBreakoutAlertService, RectangleBreakoutAlertService>();
+        services.AddScoped<IRoundingBottomDetectionService, RoundingBottomDetectionService>();
+        services.AddScoped<IRoundingBottomAlertService, RoundingBottomAlertService>();
+
         return services;
     }
 }
