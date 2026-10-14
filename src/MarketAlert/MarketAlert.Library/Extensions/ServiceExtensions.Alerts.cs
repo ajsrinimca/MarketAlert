@@ -1,5 +1,3 @@
-﻿using MarketAlert.Library.Services.Alerts;
-
 namespace MarketAlert.Library;
 
 public static partial class ServiceExtensions

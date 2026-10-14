@@ -1,6 +1,4 @@
-﻿using MarketAlert.Library.Services.MarketSymbols;
-
-namespace MarketAlert.Library;
+﻿namespace MarketAlert.Library;
 
 public static partial class ServiceExtensions
 {

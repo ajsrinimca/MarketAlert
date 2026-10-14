@@ -1,5 +1,3 @@
-using MarketAlert.Library.Endpoints.TechnicalScreeners;
-
 namespace MarketAlert.Library.Endpoints;
 
 public static class MarketAlertEndpointExtensions

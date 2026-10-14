@@ -1,5 +1,3 @@
-using MarketAlert.Library.Services.Alerts;
-
 namespace MarketAlert.Library.Endpoints.TechnicalScreeners;
 
 internal static class IslandReversalEndpoints

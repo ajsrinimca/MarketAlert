@@ -1,8 +1,8 @@
-﻿namespace MarketAlert.Library.Services.MarketStatus;
+namespace MarketAlert.Library.Services.MarketStatus;
 
 public interface IMarketStatusService
 {
-    Task<MarketAlert.Library.Models.MarketStatus> GetMarketStatusAsync(
+    Task<Models.MarketStatus.MarketStatus> GetMarketStatusAsync(
         string exchange,
         string segment,
         CancellationToken cancellationToken = default);
@@ -22,7 +22,7 @@ public sealed class MarketStatusService
         _logger = logger;
     }
 
-    public Task<MarketAlert.Library.Models.MarketStatus> GetMarketStatusAsync(
+    public Task<Models.MarketStatus.MarketStatus> GetMarketStatusAsync(
         string exchange,
         string segment,
         CancellationToken cancellationToken = default)
@@ -124,7 +124,7 @@ public sealed class MarketStatusService
                 currentTime);
 
             return Task.FromResult(
-                new MarketAlert.Library.Models.MarketStatus
+                new Models.MarketStatus.MarketStatus
                 {
                     Exchange = exchange,
                     Segment = segment,
@@ -147,7 +147,7 @@ public sealed class MarketStatusService
                 "OPEN",
                 StringComparison.OrdinalIgnoreCase);
 
-        var result = new MarketAlert.Library.Models.MarketStatus
+        var result = new Models.MarketStatus.MarketStatus
         {
             Exchange = matchingTiming.Exchange,
             Segment = matchingTiming.Segment,

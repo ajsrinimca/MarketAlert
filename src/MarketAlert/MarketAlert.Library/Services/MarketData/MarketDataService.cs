@@ -1,5 +1,3 @@
-using MarketAlert.Library.Services.MarketStatus;
-
 namespace MarketAlert.Library.Services.MarketData;
 
 public interface IMarketDataService
@@ -23,7 +21,6 @@ public sealed partial class MarketDataService : IMarketDataService
     private readonly IMarketStatusService _marketStatusService;
     private readonly IEodHistoryCache _eodHistoryCache;
     private readonly ILiveMarketDataService _liveMarketDataService;
-
     private readonly TriangleSettings _settings;
     private readonly MarketAlertOptions _marketAlertOptions;
 

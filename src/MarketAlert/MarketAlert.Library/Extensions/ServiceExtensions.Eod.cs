@@ -1,7 +1,4 @@
-﻿using MarketAlert.Library.HostedServices;
-using MarketAlert.Library.Services.MarketData;
-
-namespace MarketAlert.Library;
+﻿namespace MarketAlert.Library;
 
 public static partial class ServiceExtensions
 {

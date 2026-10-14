@@ -1,6 +1,4 @@
-﻿using MarketAlert.Library.Services.MarketData;
-
-namespace MarketAlert.Library.HostedServices;
+﻿namespace MarketAlert.Library.HostedServices;
 
 public sealed class EodHistoryCacheWarmupService
     : IHostedService
