@@ -39,6 +39,8 @@ public static partial class ServiceExtensions
         services.AddScoped<IRectangleBreakoutAlertService, RectangleBreakoutAlertService>();
         services.AddScoped<IRoundingBottomDetectionService, RoundingBottomDetectionService>();
         services.AddScoped<IRoundingBottomAlertService, RoundingBottomAlertService>();
+        services.AddScoped<IIslandReversalDetectionService, IslandReversalDetectionService>();
+        services.AddScoped<IIslandReversalAlertService, IslandReversalAlertService>();
 
         return services;
     }

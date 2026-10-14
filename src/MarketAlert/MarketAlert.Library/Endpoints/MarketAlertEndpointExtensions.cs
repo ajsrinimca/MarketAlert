@@ -14,6 +14,7 @@ public static class MarketAlertEndpointExtensions
         group.MapFlagPennantEndpoints();
         group.MapRectangleBreakoutEndpoints();
         group.MapRoundingBottomEndpoints();
+        group.MapIslandReversalEndpoints();
 
         return endpoints;
     }

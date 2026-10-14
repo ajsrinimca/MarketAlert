@@ -74,6 +74,17 @@ public static partial class ServiceExtensions
                 "RoundingBottom settings require a 60–120 candle lookback within the EOD cache and a non-negative middle SMA flatness percentage.")
             .ValidateOnStart();
 
+        services.AddOptions<IslandReversalSettings>()
+            .Bind(configuration.GetSection("IslandReversal"))
+            .Validate(
+                settings =>
+                    settings.MinimumIslandCandles >= 1 &&
+                    settings.MaximumIslandCandles >= settings.MinimumIslandCandles &&
+                    settings.MaximumPatternCandles >= settings.MaximumIslandCandles + 2 &&
+                    settings.MaximumPatternCandles <= eodCandleCount,
+                "IslandReversal settings require a positive island length and enough history for the island, preceding candle, and confirmation candle within the EOD cache.")
+            .ValidateOnStart();
+
         return services;
     }
 

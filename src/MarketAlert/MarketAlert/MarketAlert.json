@@ -19,9 +19,14 @@
     "LookbackCandles": 90,
     "MiddleSmaFlatnessPercent": 2.0
   },
+  "IslandReversal": {
+    "MinimumIslandCandles": 1,
+    "MaximumIslandCandles": 10,
+    "MaximumPatternCandles": 12
+  },
   "LiveMarket": {
     "BaseUrl": "https://dartstock-uatserv.upstox.com/",
     "TimeoutSeconds": 30,
-    "IntradayCacheMinutes": 1
+    "IntradayCacheMinutes": 15
   }
 }
