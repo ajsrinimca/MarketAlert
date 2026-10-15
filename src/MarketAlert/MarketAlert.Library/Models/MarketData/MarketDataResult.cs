@@ -9,6 +9,8 @@ public class MarketDataResult
 
     public MarketDataSkipReason SkipReason { get; set; }
 
+    public bool IsLive { get; set; }
+
     public bool IsSkipped =>
         SkipReason != MarketDataSkipReason.None;
 }

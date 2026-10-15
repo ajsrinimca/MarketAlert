@@ -7,6 +7,7 @@ public static class MarketAlertEndpointExtensions
     {
         var group = endpoints.MapGroup("/api/eodanalytics");
 
+        group.MapOutsideBarEndpoints();
         group.MapTriangleEndpoints();
         group.MapSymmetricalTriangleEndpoints();
         group.MapFlagPennantEndpoints();

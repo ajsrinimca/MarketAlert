@@ -24,6 +24,9 @@
     "MaximumIslandCandles": 10,
     "MaximumPatternCandles": 12
   },
+  "OutsideBar": {
+    "RequiredDailyCandles": 2
+  },
   "LiveMarket": {
     "BaseUrl": "https://dartstock-uatserv.upstox.com/",
     "TimeoutSeconds": 30,

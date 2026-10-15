@@ -331,6 +331,7 @@ public sealed partial class MarketDataService
                 {
                     Ticker = ticker,
                     Candles = candles,
+                    IsLive = true,
                     SkipReason = MarketDataSkipReason.None
                 });
         }

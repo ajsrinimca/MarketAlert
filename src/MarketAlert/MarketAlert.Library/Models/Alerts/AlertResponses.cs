@@ -18,6 +18,11 @@ public class FlagPennantResponse
 {
 }
 
+public sealed class OutsideBarResponse
+    : AlertResponse<OutsideBarResult>
+{
+}
+
 public sealed class IslandReversalResponse
     : AlertResponse<IslandReversalResult>
 {

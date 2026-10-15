@@ -85,6 +85,15 @@ public static partial class ServiceExtensions
                 "IslandReversal settings require a positive island length and enough history for the island, preceding candle, and confirmation candle within the EOD cache.")
             .ValidateOnStart();
 
+        services.AddOptions<OutsideBarSettings>()
+            .Bind(configuration.GetSection("OutsideBar"))
+            .Validate(
+                settings =>
+                    settings.RequiredDailyCandles == 2 &&
+                    settings.RequiredDailyCandles <= eodCandleCount,
+                "OutsideBar:RequiredDailyCandles must be exactly 2 and fit within MarketData:EodCandleCount.")
+            .ValidateOnStart();
+
         return services;
     }
 
