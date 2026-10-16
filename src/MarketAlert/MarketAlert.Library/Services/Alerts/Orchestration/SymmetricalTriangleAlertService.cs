@@ -9,25 +9,13 @@ public interface ISymmetricalTriangleAlertService
         CancellationToken cancellationToken = default);
 }
 
-public sealed class SymmetricalTriangleAlertService
+public sealed class SymmetricalTriangleAlertService(
+    IMarketDataService marketDataService,
+    IMarketSymbolService marketSymbolService,
+    ISymmetricalTriangleDetectionService detectionService,
+    ILogger<SymmetricalTriangleAlertService> logger)
     : ISymmetricalTriangleAlertService
 {
-    private readonly IMarketDataService _marketDataService;
-    private readonly IMarketSymbolService _marketSymbolService;
-    private readonly ISymmetricalTriangleDetectionService _detectionService;
-    private readonly ILogger<SymmetricalTriangleAlertService> _logger;
-
-    public SymmetricalTriangleAlertService(
-        IMarketDataService marketDataService,
-        IMarketSymbolService marketSymbolService,
-        ISymmetricalTriangleDetectionService detectionService,
-        ILogger<SymmetricalTriangleAlertService> logger)
-    {
-        _marketDataService = marketDataService;
-        _marketSymbolService = marketSymbolService;
-        _detectionService = detectionService;
-        _logger = logger;
-    }
 
     public async Task<SymmetricalTriangleResponse> GetAlertsAsync(
         string exchange,
@@ -62,7 +50,7 @@ public sealed class SymmetricalTriangleAlertService
         // REQUEST START
         // ---------------------------------------------------------
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Symmetrical Triangle analysis started. " +
             "Exchange: {Exchange}, Group: {Group}, " +
             "IncludeLive: {IncludeLive}",
@@ -81,7 +69,7 @@ public sealed class SymmetricalTriangleAlertService
             var groupStopwatch = Stopwatch.StartNew();
 
             tickers =
-                await _marketSymbolService.GetTickersByGroupAsync(
+                await marketSymbolService.GetTickersByGroupAsync(
                     group,
                     cancellationToken);
 
@@ -93,7 +81,7 @@ public sealed class SymmetricalTriangleAlertService
 
             groupStopwatch.Stop();
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Symmetrical Triangle group resolution completed. " +
                 "Exchange: {Exchange}, Group: {Group}, " +
                 "TickerCount: {TickerCount}, ElapsedMs: {ElapsedMs}",
@@ -127,7 +115,7 @@ public sealed class SymmetricalTriangleAlertService
                     }
                 };
 
-                _logger.LogTrace(
+                logger.LogTrace(
                     "Symmetrical Triangle analysis summary. " +
                     "Exchange: {Exchange}, Group: {Group}, " +
                     "IncludeLive: {IncludeLive}, " +
@@ -152,7 +140,7 @@ public sealed class SymmetricalTriangleAlertService
         var marketDataStopwatch = Stopwatch.StartNew();
 
         var marketData =
-            await _marketDataService.GetMarketDataAsync(
+            await marketDataService.GetMarketDataAsync(
                 exchange,
                 tickers,
                 includeLive,
@@ -160,7 +148,7 @@ public sealed class SymmetricalTriangleAlertService
 
         marketDataStopwatch.Stop();
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Symmetrical Triangle market data retrieval completed. " +
             "Exchange: {Exchange}, Group: {Group}, " +
             "IncludeLive: {IncludeLive}, ResultCount: {ResultCount}, " +
@@ -211,9 +199,9 @@ public sealed class SymmetricalTriangleAlertService
             marketData,
             exchange,
             group,
-            _detectionService.Detect,
+            detectionService.Detect,
             result => result.IsPatternDetected,
-            _logger,
+            logger,
             "Symmetrical Triangle",
             cancellationToken);
 
@@ -240,7 +228,7 @@ public sealed class SymmetricalTriangleAlertService
         // SUMMARY LOG
         // ---------------------------------------------------------
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Symmetrical Triangle analysis summary. " +
             "Exchange: {Exchange}, Group: {Group}, " +
             "IncludeLive: {IncludeLive}, " +

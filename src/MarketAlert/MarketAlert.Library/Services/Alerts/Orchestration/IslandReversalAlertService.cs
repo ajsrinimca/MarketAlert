@@ -9,28 +9,15 @@ public interface IIslandReversalAlertService
         CancellationToken cancellationToken = default);
 }
 
-public sealed class IslandReversalAlertService
+public sealed class IslandReversalAlertService(
+    IMarketDataService marketDataService,
+    IMarketSymbolService marketSymbolService,
+    IIslandReversalDetectionService detectionService,
+    IOptions<IslandReversalSettings> settings,
+    ILogger<IslandReversalAlertService> logger)
     : IIslandReversalAlertService
 {
-    private readonly IMarketDataService _marketDataService;
-    private readonly IMarketSymbolService _marketSymbolService;
-    private readonly IIslandReversalDetectionService _detectionService;
-    private readonly IslandReversalSettings _settings;
-    private readonly ILogger<IslandReversalAlertService> _logger;
-
-    public IslandReversalAlertService(
-        IMarketDataService marketDataService,
-        IMarketSymbolService marketSymbolService,
-        IIslandReversalDetectionService detectionService,
-        IOptions<IslandReversalSettings> settings,
-        ILogger<IslandReversalAlertService> logger)
-    {
-        _marketDataService = marketDataService;
-        _marketSymbolService = marketSymbolService;
-        _detectionService = detectionService;
-        _settings = settings.Value;
-        _logger = logger;
-    }
+    private readonly IslandReversalSettings _settings = settings.Value;
 
     public async Task<IslandReversalResponse> GetAlertsAsync(
         string exchange,
@@ -52,7 +39,7 @@ public sealed class IslandReversalAlertService
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Island Reversal analysis started. Exchange: {Exchange}, " +
             "Group: {Group}, IncludeLive: {IncludeLive}",
             exchange,
@@ -63,7 +50,7 @@ public sealed class IslandReversalAlertService
 
         if (group != null)
         {
-            tickers = await _marketSymbolService.GetTickersByGroupAsync(
+            tickers = await marketSymbolService.GetTickersByGroupAsync(
                 group,
                 cancellationToken);
 
@@ -97,7 +84,7 @@ public sealed class IslandReversalAlertService
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var marketData = await _marketDataService.GetMarketDataAsync(
+        var marketData = await marketDataService.GetMarketDataAsync(
             exchange,
             tickers,
             includeLive,
@@ -125,9 +112,9 @@ public sealed class IslandReversalAlertService
             marketData,
             exchange,
             group,
-            _detectionService.Detect,
+            detectionService.Detect,
             result => result.IsPatternDetected,
-            _logger,
+            logger,
             "Island Reversal",
             cancellationToken);
 
@@ -146,7 +133,7 @@ public sealed class IslandReversalAlertService
             ElapsedMs = stopwatch.ElapsedMilliseconds
         };
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Island Reversal analysis summary. Exchange: {Exchange}, " +
             "Group: {Group}, IncludeLive: {IncludeLive}, " +
             "Requested: {Requested}, Processed: {Processed}, " +

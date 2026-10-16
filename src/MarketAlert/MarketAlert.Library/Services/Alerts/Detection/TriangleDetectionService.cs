@@ -7,18 +7,11 @@ public interface ITriangleDetectionService
         List<MarketCandle> candles);
 }
 
-internal sealed class TriangleDetectionService : ITriangleDetectionService
+internal sealed class TriangleDetectionService(
+    ISwingPointService swingPointService,
+    IOptions<TriangleSettings> options) : ITriangleDetectionService
 {
-    private readonly ISwingPointService _swingPointService;
-    private readonly TriangleSettings _settings;
-
-    public TriangleDetectionService(
-        ISwingPointService swingPointService,
-        IOptions<TriangleSettings> options)
-    {
-        _swingPointService = swingPointService;
-        _settings = options.Value;
-    }
+    private readonly TriangleSettings _settings = options.Value;
 
     public TriangleAlertItem Detect(
         string ticker,
@@ -49,12 +42,12 @@ internal sealed class TriangleDetectionService : ITriangleDetectionService
         // Therefore we do NOT sort or Take() here.
         // ---------------------------------------------------------
 
-        var swingHighs = _swingPointService.FindSwingHighs(
+        var swingHighs = swingPointService.FindSwingHighs(
             candles,
             _settings.SwingLeftBars,
             _settings.SwingRightBars);
 
-        var swingLows = _swingPointService.FindSwingLows(
+        var swingLows = swingPointService.FindSwingLows(
             candles,
             _settings.SwingLeftBars,
             _settings.SwingRightBars);

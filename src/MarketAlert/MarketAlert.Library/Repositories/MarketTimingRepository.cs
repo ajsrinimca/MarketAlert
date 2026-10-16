@@ -1,4 +1,4 @@
-﻿namespace MarketAlert.Library.Repositories;
+namespace MarketAlert.Library.Repositories;
 
 public interface IMarketTimingRepository
 {
@@ -6,19 +6,11 @@ public interface IMarketTimingRepository
         CancellationToken cancellationToken = default);
 }
 
-public sealed class MarketTimingRepository
+public sealed class MarketTimingRepository(
+    IDbConnectionFactory connectionFactory,
+    ILogger<MarketTimingRepository> logger)
     : IMarketTimingRepository
 {
-    private readonly IDbConnectionFactory _connectionFactory;
-    private readonly ILogger<MarketTimingRepository> _logger;
-
-    public MarketTimingRepository(
-        IDbConnectionFactory connectionFactory,
-        ILogger<MarketTimingRepository> logger)
-    {
-        _connectionFactory = connectionFactory;
-        _logger = logger;
-    }
 
     public async Task<List<MarketTiming>> GetMarketTimingsAsync(
         CancellationToken cancellationToken = default)
@@ -26,7 +18,7 @@ public sealed class MarketTimingRepository
         var startTime = DateTime.Now;
         var stopwatch = Stopwatch.StartNew();
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Market timing database call started. " +
             "StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}",
             startTime);
@@ -34,7 +26,7 @@ public sealed class MarketTimingRepository
         try
         {
             await using var connection =
-                _connectionFactory.CreateConnection(
+                connectionFactory.CreateConnection(
                     DatabaseConstants.WebExpress);
 
             await connection.OpenAsync(cancellationToken);
@@ -60,7 +52,7 @@ public sealed class MarketTimingRepository
 
             var endTime = DateTime.Now;
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Market timing database call completed. " +
                 "StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}, " +
                 "EndTime: {EndTime:yyyy-MM-dd HH:mm:ss.fff}, " +
@@ -79,7 +71,7 @@ public sealed class MarketTimingRepository
 
             var endTime = DateTime.Now;
 
-            _logger.LogError(
+            logger.LogError(
                 ex,
                 "Market timing database call failed. " +
                 "StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}, " +

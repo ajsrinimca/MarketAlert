@@ -7,25 +7,14 @@ public interface IMarketSymbolService
         CancellationToken cancellationToken = default);
 }
 
-public sealed class MarketSymbolService
+public sealed class MarketSymbolService(
+    IMarketSymbolRepository repository,
+    IMarketSymbolGroupCache cache,
+    ILogger<MarketSymbolService> logger)
     : IMarketSymbolService
 {
     private static readonly TimeSpan CacheExpiration =
         TimeSpan.FromDays(1);
-
-    private readonly IMarketSymbolRepository _repository;
-    private readonly IMarketSymbolGroupCache _cache;
-    private readonly ILogger<MarketSymbolService> _logger;
-
-    public MarketSymbolService(
-        IMarketSymbolRepository repository,
-        IMarketSymbolGroupCache cache,
-        ILogger<MarketSymbolService> logger)
-    {
-        _repository = repository;
-        _cache = cache;
-        _logger = logger;
-    }
 
     public async Task<List<string>> GetTickersByGroupAsync(
         string group,
@@ -35,11 +24,11 @@ public sealed class MarketSymbolService
         // CACHE
         // ---------------------------------------------------------
 
-        if (_cache.TryGet(
+        if (cache.TryGet(
                 group,
                 out var cachedTickers))
         {
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Market symbol group cache hit. " +
                 "Group: {Group}, TickerCount: {TickerCount}",
                 group,
@@ -48,7 +37,7 @@ public sealed class MarketSymbolService
             return cachedTickers.ToList();
         }
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Market symbol group cache miss. " +
             "Group: {Group}",
             group);
@@ -58,7 +47,7 @@ public sealed class MarketSymbolService
         // ---------------------------------------------------------
 
         var tickers =
-            await _repository.GetTickersByGroupAsync(
+            await repository.GetTickersByGroupAsync(
                 group,
                 cancellationToken);
 
@@ -66,12 +55,12 @@ public sealed class MarketSymbolService
         // CACHE
         // ---------------------------------------------------------
 
-        _cache.Set(
+        cache.Set(
             group,
             tickers,
             CacheExpiration);
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Market symbol group cached. " +
             "Group: {Group}, TickerCount: {TickerCount}, " +
             "CacheExpirationHours: {CacheExpirationHours}",

@@ -1,32 +1,22 @@
-﻿namespace MarketAlert.Library.HostedServices;
+namespace MarketAlert.Library.HostedServices;
 
-public sealed class MarketTimingCacheWarmupService
+public sealed class MarketTimingCacheWarmupService(
+    IServiceScopeFactory scopeFactory,
+    IMarketTimingCache cache,
+    ILogger<MarketTimingCacheWarmupService> logger)
     : IHostedService
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-    private readonly IMarketTimingCache _cache;
-    private readonly ILogger<MarketTimingCacheWarmupService> _logger;
-
-    public MarketTimingCacheWarmupService(
-        IServiceScopeFactory scopeFactory,
-        IMarketTimingCache cache,
-        ILogger<MarketTimingCacheWarmupService> logger)
-    {
-        _scopeFactory = scopeFactory;
-        _cache = cache;
-        _logger = logger;
-    }
 
     public async Task StartAsync(
         CancellationToken cancellationToken)
     {
-        _logger.LogTrace(
+        logger.LogTrace(
             "Starting market timing cache warm-up...");
 
         try
         {
             using var scope =
-                _scopeFactory.CreateScope();
+                scopeFactory.CreateScope();
 
             var repository =
                 scope.ServiceProvider
@@ -42,18 +32,18 @@ public sealed class MarketTimingCacheWarmupService
                     "No market timing configuration was found.");
             }
 
-            _cache.SetTimings(timings);
+            cache.SetTimings(timings);
 
-            _cache.MarkReady();
+            cache.MarkReady();
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Market timing cache warm-up completed. " +
                 "TimingCount: {TimingCount}",
                 timings.Count);
         }
         catch (Exception ex)
         {
-            _logger.LogError(
+            logger.LogError(
                 ex,
                 "Failed to warm up market timing cache.");
 

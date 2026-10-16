@@ -9,28 +9,15 @@ public interface IRectangleBreakoutAlertService
         CancellationToken cancellationToken = default);
 }
 
-public sealed class RectangleBreakoutAlertService
+public sealed class RectangleBreakoutAlertService(
+    IMarketDataService marketDataService,
+    IMarketSymbolService marketSymbolService,
+    IRectangleBreakoutDetectionService detectionService,
+    IOptions<RectangleBreakoutSettings> settings,
+    ILogger<RectangleBreakoutAlertService> logger)
     : IRectangleBreakoutAlertService
 {
-    private readonly IMarketDataService _marketDataService;
-    private readonly IMarketSymbolService _marketSymbolService;
-    private readonly IRectangleBreakoutDetectionService _detectionService;
-    private readonly RectangleBreakoutSettings _settings;
-    private readonly ILogger<RectangleBreakoutAlertService> _logger;
-
-    public RectangleBreakoutAlertService(
-        IMarketDataService marketDataService,
-        IMarketSymbolService marketSymbolService,
-        IRectangleBreakoutDetectionService detectionService,
-        IOptions<RectangleBreakoutSettings> settings,
-        ILogger<RectangleBreakoutAlertService> logger)
-    {
-        _marketDataService = marketDataService;
-        _marketSymbolService = marketSymbolService;
-        _detectionService = detectionService;
-        _settings = settings.Value;
-        _logger = logger;
-    }
+    private readonly RectangleBreakoutSettings _settings = settings.Value;
 
     public async Task<RectangleBreakoutResponse> GetAlertsAsync(
         string exchange,
@@ -60,7 +47,7 @@ public sealed class RectangleBreakoutAlertService
         // REQUEST START
         // ---------------------------------------------------------
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Rectangle Breakout analysis started. " +
             "Exchange: {Exchange}, Group: {Group}, IncludeLive: {IncludeLive}",
             exchange,
@@ -77,7 +64,7 @@ public sealed class RectangleBreakoutAlertService
         {
             var groupStopwatch = Stopwatch.StartNew();
 
-            tickers = await _marketSymbolService.GetTickersByGroupAsync(
+            tickers = await marketSymbolService.GetTickersByGroupAsync(
                 group,
                 cancellationToken);
 
@@ -89,7 +76,7 @@ public sealed class RectangleBreakoutAlertService
 
             groupStopwatch.Stop();
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Rectangle Breakout group resolution completed. " +
                 "Exchange: {Exchange}, Group: {Group}, " +
                 "TickerCount: {TickerCount}, ElapsedMs: {ElapsedMs}",
@@ -129,7 +116,7 @@ public sealed class RectangleBreakoutAlertService
 
         var marketDataStopwatch = Stopwatch.StartNew();
 
-        var marketData = await _marketDataService.GetMarketDataAsync(
+        var marketData = await marketDataService.GetMarketDataAsync(
             exchange,
             tickers,
             includeLive,
@@ -138,7 +125,7 @@ public sealed class RectangleBreakoutAlertService
 
         marketDataStopwatch.Stop();
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Rectangle Breakout market data retrieval completed. " +
             "Exchange: {Exchange}, Group: {Group}, IncludeLive: {IncludeLive}, " +
             "ResultCount: {ResultCount}, ElapsedMs: {ElapsedMs}",
@@ -180,9 +167,9 @@ public sealed class RectangleBreakoutAlertService
             marketData,
             exchange,
             group,
-            _detectionService.Detect,
+            detectionService.Detect,
             result => result.IsPatternDetected,
-            _logger,
+            logger,
             "Rectangle Breakout",
             cancellationToken);
 
@@ -190,7 +177,7 @@ public sealed class RectangleBreakoutAlertService
 
         foreach (var result in response.Data)
         {
-            _logger.LogInformation(
+            logger.LogInformation(
                 "Rectangle detected. Ticker: {Ticker}, Top: {Top}, " +
                 "Bottom: {Bottom}, RangePercentage: {RangePercentage}",
                 result.Ticker,
@@ -220,7 +207,7 @@ public sealed class RectangleBreakoutAlertService
         // SUMMARY LOG
         // ---------------------------------------------------------
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Rectangle Breakout analysis summary. Exchange: {Exchange}, " +
             "Group: {Group}, IncludeLive: {IncludeLive}, Requested: {Requested}, " +
             "Processed: {Processed}, Detected: {Detected}, Skipped: {Skipped}, " +

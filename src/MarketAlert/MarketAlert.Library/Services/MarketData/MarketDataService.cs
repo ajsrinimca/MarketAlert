@@ -16,31 +16,15 @@ public interface IMarketDataService
         CancellationToken cancellationToken = default);
 }
 
-public sealed partial class MarketDataService : IMarketDataService
+public sealed partial class MarketDataService(
+    IMarketStatusService marketStatusService,
+    IEodHistoryCache eodHistoryCache,
+    ILiveMarketDataService liveMarketDataService,
+    IOptions<TriangleSettings> options,
+    MarketAlertOptions marketAlertOptions,
+    ILogger<MarketDataService> logger) : IMarketDataService
 {
-    private readonly IMarketStatusService _marketStatusService;
-    private readonly IEodHistoryCache _eodHistoryCache;
-    private readonly ILiveMarketDataService _liveMarketDataService;
-    private readonly TriangleSettings _settings;
-    private readonly MarketAlertOptions _marketAlertOptions;
-
-    private readonly ILogger<MarketDataService> _logger;
-
-    public MarketDataService(
-        IMarketStatusService marketStatusService,
-        IEodHistoryCache eodHistoryCache,
-        ILiveMarketDataService liveMarketDataService,
-        IOptions<TriangleSettings> options,
-        MarketAlertOptions marketAlertOptions,
-        ILogger<MarketDataService> logger)
-    {
-        _marketStatusService = marketStatusService;
-        _eodHistoryCache = eodHistoryCache;
-        _liveMarketDataService = liveMarketDataService;
-        _settings = options.Value;
-        _marketAlertOptions = marketAlertOptions;
-        _logger = logger;
-    }
+    private readonly TriangleSettings _settings = options.Value;
 
     public async Task<List<MarketDataResult>> GetMarketDataAsync(
         string exchange,
@@ -85,7 +69,7 @@ public sealed partial class MarketDataService : IMarketDataService
                 "Triangle:DefaultLookbackCandles must be greater than zero.");
         }
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Market data retrieval started. " +
             "Exchange: {Exchange}, IncludeLive: {IncludeLive}, " +
             "RequestedTickerFilter: {HasTickerFilter}, " +
@@ -123,7 +107,7 @@ public sealed partial class MarketDataService : IMarketDataService
             requestedTickers =
                 GetConfiguredTickers(exchange);
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Ticker universe resolved from MarketAlertOptions. " +
                 "Exchange: {Exchange}, TickerCount: {TickerCount}",
                 exchange,
@@ -138,7 +122,7 @@ public sealed partial class MarketDataService : IMarketDataService
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Ticker universe resolved from request. " +
                 "Exchange: {Exchange}, TickerCount: {TickerCount}",
                 exchange,
@@ -149,7 +133,7 @@ public sealed partial class MarketDataService : IMarketDataService
         {
             stopwatch.Stop();
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Market data retrieval completed with no tickers. " +
                 "Exchange: {Exchange}, IncludeLive: {IncludeLive}, " +
                 "ElapsedMs: {ElapsedMs}",
@@ -172,7 +156,7 @@ public sealed partial class MarketDataService : IMarketDataService
 
         if (!includeLive)
         {
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Using EOD-only market data path. " +
                 "Exchange: {Exchange}, TickerCount: {TickerCount}",
                 exchange,
@@ -186,7 +170,7 @@ public sealed partial class MarketDataService : IMarketDataService
 
             stopwatch.Stop();
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Market data retrieval completed. " +
                 "Exchange: {Exchange}, IncludeLive: {IncludeLive}, " +
                 "TickerCount: {TickerCount}, ResultCount: {ResultCount}, " +
@@ -210,19 +194,19 @@ public sealed partial class MarketDataService : IMarketDataService
 
         const string segment = "CASH";
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Checking market status for live request. " +
             "Exchange: {Exchange}, Segment: {Segment}",
             exchange,
             segment);
 
         var marketStatus =
-            await _marketStatusService.GetMarketStatusAsync(
+            await marketStatusService.GetMarketStatusAsync(
                 exchange,
                 segment,
                 cancellationToken);
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Market status retrieved. " +
             "Exchange: {Exchange}, Segment: {Segment}, " +
             "Status: {Status}, IsMarketOpen: {IsMarketOpen}",
@@ -237,7 +221,7 @@ public sealed partial class MarketDataService : IMarketDataService
 
         if (marketStatus.IsMarketOpen)
         {
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Using live market data path. " +
                 "Exchange: {Exchange}, TickerCount: {TickerCount}",
                 exchange,
@@ -252,7 +236,7 @@ public sealed partial class MarketDataService : IMarketDataService
 
             stopwatch.Stop();
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Market data retrieval completed. " +
                 "Exchange: {Exchange}, IncludeLive: {IncludeLive}, " +
                 "MarketStatus: {MarketStatus}, " +
@@ -274,7 +258,7 @@ public sealed partial class MarketDataService : IMarketDataService
         // Fall back to EOD.
         // ---------------------------------------------------------
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Live request received while market is closed. " +
             "Falling back to EOD path. " +
             "Exchange: {Exchange}, Status: {Status}",
@@ -289,7 +273,7 @@ public sealed partial class MarketDataService : IMarketDataService
 
         stopwatch.Stop();
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Market data retrieval completed. " +
             "Exchange: {Exchange}, IncludeLive: {IncludeLive}, " +
             "MarketStatus: {MarketStatus}, TickerCount: {TickerCount}, " +
@@ -314,13 +298,13 @@ public sealed partial class MarketDataService : IMarketDataService
         if (exchange == "NSE")
         {
             symbols =
-                _marketAlertOptions.NseSymbols ??
+                marketAlertOptions.NseSymbols ??
                 new List<string>();
         }
         else if (exchange == "BSE")
         {
             symbols =
-                _marketAlertOptions.BseSymbols ??
+                marketAlertOptions.BseSymbols ??
                 new List<string>();
         }
         else

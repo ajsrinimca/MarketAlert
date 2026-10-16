@@ -1,4 +1,4 @@
-﻿namespace MarketAlert.Library.Repositories;
+namespace MarketAlert.Library.Repositories;
 
 public interface IMarketSymbolRepository
 {
@@ -7,18 +7,10 @@ public interface IMarketSymbolRepository
         CancellationToken cancellationToken = default);
 }
 
-public class MarketSymbolRepository : IMarketSymbolRepository
+public class MarketSymbolRepository(
+    IDbConnectionFactory connectionFactory,
+    ILogger<MarketSymbolRepository> logger) : IMarketSymbolRepository
 {
-    private readonly IDbConnectionFactory _connectionFactory;
-    private readonly ILogger<MarketSymbolRepository> _logger;
-
-    public MarketSymbolRepository(
-        IDbConnectionFactory connectionFactory,
-        ILogger<MarketSymbolRepository> logger)
-    {
-        _connectionFactory = connectionFactory;
-        _logger = logger;
-    }
 
     public async Task<List<string>> GetTickersByGroupAsync(
         string group,
@@ -32,7 +24,7 @@ public class MarketSymbolRepository : IMarketSymbolRepository
         }
 
         await using var connection =
-            _connectionFactory.CreateConnection(
+            connectionFactory.CreateConnection(
                 DatabaseConstants.WebExpress);
 
         await connection.OpenAsync(cancellationToken);
@@ -74,7 +66,7 @@ public class MarketSymbolRepository : IMarketSymbolRepository
         // Found as Index
         if (tickers.Count > 0)
         {
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Group {Group} resolved as index. Found {Count} tickers.",
                 group,
                 tickers.Count);
@@ -117,7 +109,7 @@ public class MarketSymbolRepository : IMarketSymbolRepository
         // Found as Sector
         if (tickers.Count > 0)
         {
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Group {Group} resolved as sector. Found {Count} tickers.",
                 group,
                 tickers.Count);
@@ -129,7 +121,7 @@ public class MarketSymbolRepository : IMarketSymbolRepository
         // 3. Nothing found
         // ---------------------------------------------------------
 
-        _logger.LogDebug(
+        logger.LogDebug(
             "No index or sector found for group {Group}.",
             group);
 

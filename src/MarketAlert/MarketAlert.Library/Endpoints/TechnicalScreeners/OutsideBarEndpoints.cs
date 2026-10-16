@@ -1,5 +1,3 @@
-using MarketAlert.Library.Services.Alerts.Orchestration;
-
 namespace MarketAlert.Library.Endpoints.TechnicalScreeners;
 
 internal static class OutsideBarEndpoints

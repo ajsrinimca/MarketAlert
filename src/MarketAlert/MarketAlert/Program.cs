@@ -1,10 +1,3 @@
-using MarketAlert.Library;
-using MarketAlert.Library.Endpoints;
-using NLog;
-using NLog.Config;
-using NLog.Web;
-using System.Text.Json;
-
 var builder = WebApplication.CreateBuilder(args);
 
 // --------------------------------------------------

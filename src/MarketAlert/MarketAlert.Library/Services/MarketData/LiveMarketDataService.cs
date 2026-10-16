@@ -1,4 +1,4 @@
-﻿namespace MarketAlert.Library.Services.MarketData;
+namespace MarketAlert.Library.Services.MarketData;
 
 public interface ILiveMarketDataService
 {
@@ -7,28 +7,15 @@ public interface ILiveMarketDataService
         CancellationToken cancellationToken = default);
 }
 
-public sealed class LiveMarketDataService
+public sealed class LiveMarketDataService(
+    HttpClient httpClient,
+    ISegmentPrecisionCache segmentPrecisionCache,
+    ILiveMarketResponseCache liveMarketResponseCache,
+    IOptions<LiveMarketSettings> options,
+    ILogger<LiveMarketDataService> logger)
     : ILiveMarketDataService
 {
-    private readonly HttpClient _httpClient;
-    private readonly ISegmentPrecisionCache _segmentPrecisionCache;
-    private readonly ILiveMarketResponseCache _liveMarketResponseCache;
-    private readonly LiveMarketSettings _settings;
-    private readonly ILogger<LiveMarketDataService> _logger;
-
-    public LiveMarketDataService(
-        HttpClient httpClient,
-        ISegmentPrecisionCache segmentPrecisionCache,
-        ILiveMarketResponseCache liveMarketResponseCache,
-        IOptions<LiveMarketSettings> options,
-        ILogger<LiveMarketDataService> logger)
-    {
-        _httpClient = httpClient;
-        _segmentPrecisionCache = segmentPrecisionCache;
-        _liveMarketResponseCache = liveMarketResponseCache;
-        _settings = options.Value;
-        _logger = logger;
-    }
+    private readonly LiveMarketSettings _settings = options.Value;
 
     public async Task<LiveMarketResponse> GetLiveQuotesAsync(
         string exchange,
@@ -43,12 +30,12 @@ public sealed class LiveMarketDataService
 
         exchange = exchangeType.ToString();
 
-        if (_liveMarketResponseCache.TryGet(exchange, out var cachedResponse))
+        if (liveMarketResponseCache.TryGet(exchange, out var cachedResponse))
         {
             return cachedResponse;
         }
 
-        var fetchLock = _liveMarketResponseCache.GetFetchLock(exchange);
+        var fetchLock = liveMarketResponseCache.GetFetchLock(exchange);
         await fetchLock.WaitAsync(cancellationToken);
 
         try
@@ -78,11 +65,11 @@ public sealed class LiveMarketDataService
         // Check live response cache
         // ---------------------------------------------------------
 
-        if (_liveMarketResponseCache.TryGet(
+        if (liveMarketResponseCache.TryGet(
                 exchange,
                 out var cachedResponse))
         {
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Live market cache hit. " +
                 "Exchange: {Exchange}, CacheMinutes: {CacheMinutes}",
                 exchange,
@@ -91,7 +78,7 @@ public sealed class LiveMarketDataService
             return cachedResponse;
         }
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Live market cache miss. " +
             "Exchange: {Exchange}",
             exchange);
@@ -109,7 +96,7 @@ public sealed class LiveMarketDataService
         var stopwatch =
             Stopwatch.StartNew();
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Live market API call started. " +
             "Exchange: {Exchange}, StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}",
             exchange,
@@ -118,7 +105,7 @@ public sealed class LiveMarketDataService
         try
         {
             using var response =
-                await _httpClient.GetAsync(
+                await httpClient.GetAsync(
                     url,
                     cancellationToken);
 
@@ -126,7 +113,7 @@ public sealed class LiveMarketDataService
             {
                 stopwatch.Stop();
 
-                _logger.LogDebug(
+                logger.LogDebug(
                     "Live market API returned unsuccessful status. " +
                     "Exchange: {Exchange}, StatusCode: {StatusCode}, " +
                     "ResponseTime: {ResponseTimeMs} ms",
@@ -152,7 +139,7 @@ public sealed class LiveMarketDataService
             var endTime =
                 DateTime.Now;
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Live market API call completed. " +
                 "Exchange: {Exchange}, StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}, " +
                 "EndTime: {EndTime:yyyy-MM-dd HH:mm:ss.fff}, " +
@@ -168,7 +155,7 @@ public sealed class LiveMarketDataService
             // Get segment precision from startup cache
             // -----------------------------------------------------
 
-            if (!_segmentPrecisionCache.IsReady)
+            if (!segmentPrecisionCache.IsReady)
             {
                 throw new InvalidOperationException(
                     "Segment precision cache is not ready.");
@@ -184,7 +171,7 @@ public sealed class LiveMarketDataService
             };
 
             var precision =
-                _segmentPrecisionCache.GetPrecision(
+                segmentPrecisionCache.GetPrecision(
                     segmentCode);
 
             var divisor =
@@ -192,7 +179,7 @@ public sealed class LiveMarketDataService
                     10,
                     precision);
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Applying price precision. " +
                 "Exchange: {Exchange}, Segment: {SegmentCode}, " +
                 "Precision: {Precision}, Divisor: {Divisor}",
@@ -217,12 +204,12 @@ public sealed class LiveMarketDataService
             // Cache final processed response
             // -----------------------------------------------------
 
-            _liveMarketResponseCache.Set(
+            liveMarketResponseCache.Set(
                 exchange,
                 result,
                 cacheExpiration);
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Live market response cached. " +
                 "Exchange: {Exchange}, QuoteCount: {QuoteCount}, " +
                 "CacheMinutes: {CacheMinutes}",
@@ -236,7 +223,7 @@ public sealed class LiveMarketDataService
         {
             stopwatch.Stop();
 
-            _logger.LogDebug(
+            logger.LogDebug(
                 ex,
                 "Live market API request failed. " +
                 "Exchange: {Exchange}, ResponseTime: {ResponseTimeMs} ms",

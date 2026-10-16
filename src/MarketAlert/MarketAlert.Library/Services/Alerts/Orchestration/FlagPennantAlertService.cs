@@ -9,24 +9,12 @@ public interface IFlagPennantAlertService
         CancellationToken cancellationToken = default);
 }
 
-public sealed class FlagPennantAlertService : IFlagPennantAlertService
+public sealed class FlagPennantAlertService(
+    IMarketDataService marketDataService,
+    IMarketSymbolService marketSymbolService,
+    IFlagPennantDetectionService detectionService,
+    ILogger<FlagPennantAlertService> logger) : IFlagPennantAlertService
 {
-    private readonly IMarketDataService _marketDataService;
-    private readonly IMarketSymbolService _marketSymbolService;
-    private readonly IFlagPennantDetectionService _detectionService;
-    private readonly ILogger<FlagPennantAlertService> _logger;
-
-    public FlagPennantAlertService(
-        IMarketDataService marketDataService,
-        IMarketSymbolService marketSymbolService,
-        IFlagPennantDetectionService detectionService,
-        ILogger<FlagPennantAlertService> logger)
-    {
-        _marketDataService = marketDataService;
-        _marketSymbolService = marketSymbolService;
-        _detectionService = detectionService;
-        _logger = logger;
-    }
 
     public async Task<FlagPennantResponse> GetAlertsAsync(
         string exchange,
@@ -46,7 +34,7 @@ public sealed class FlagPennantAlertService : IFlagPennantAlertService
             ? null
             : group.Trim();
 
-        _logger.LogInformation(
+        logger.LogInformation(
             "Flag and Pennant analysis started. " +
             "Exchange: {Exchange}, Group: {Group}, IncludeLive: {IncludeLive}",
             exchange,
@@ -58,7 +46,7 @@ public sealed class FlagPennantAlertService : IFlagPennantAlertService
 
         if (group != null)
         {
-            tickers = await _marketSymbolService.GetTickersByGroupAsync(
+            tickers = await marketSymbolService.GetTickersByGroupAsync(
                 group,
                 cancellationToken);
 
@@ -70,7 +58,7 @@ public sealed class FlagPennantAlertService : IFlagPennantAlertService
         }
 
         var marketData =
-            await _marketDataService.GetMarketDataAsync(
+            await marketDataService.GetMarketDataAsync(
                 exchange,
                 tickers,
                 includeLive,
@@ -100,9 +88,9 @@ public sealed class FlagPennantAlertService : IFlagPennantAlertService
             marketData,
             exchange,
             group,
-            _detectionService.Detect,
+            detectionService.Detect,
             result => result.IsPatternDetected,
-            _logger,
+            logger,
             "Flag and Pennant",
             cancellationToken);
 
@@ -110,7 +98,7 @@ public sealed class FlagPennantAlertService : IFlagPennantAlertService
 
         foreach (var result in response.Data)
         {
-            _logger.LogInformation(
+            logger.LogInformation(
                 "Flag or Pennant detected. Ticker: {Ticker}, PatternType: {PatternType}",
                 result.Ticker,
                 result.PatternType);

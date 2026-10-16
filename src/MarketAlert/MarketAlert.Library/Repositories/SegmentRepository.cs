@@ -1,4 +1,4 @@
-﻿namespace MarketAlert.Library.Repositories;
+namespace MarketAlert.Library.Repositories;
 
 public interface ISegmentRepository
 {
@@ -6,19 +6,11 @@ public interface ISegmentRepository
         CancellationToken cancellationToken = default);
 }
 
-public sealed class SegmentRepository
+public sealed class SegmentRepository(
+    IDbConnectionFactory connectionFactory,
+    ILogger<SegmentRepository> logger)
     : ISegmentRepository
 {
-    private readonly IDbConnectionFactory _connectionFactory;
-    private readonly ILogger<SegmentRepository> _logger;
-
-    public SegmentRepository(
-        IDbConnectionFactory connectionFactory,
-        ILogger<SegmentRepository> logger)
-    {
-        _connectionFactory = connectionFactory;
-        _logger = logger;
-    }
 
     public async Task<List<SegmentPrecision>> GetAllPrecisionsAsync(
         CancellationToken cancellationToken = default)
@@ -26,7 +18,7 @@ public sealed class SegmentRepository
         var startTime = DateTime.Now;
         var stopwatch = Stopwatch.StartNew();
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Segment precision database call started. " +
             "StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}",
             startTime);
@@ -34,7 +26,7 @@ public sealed class SegmentRepository
         try
         {
             await using var connection =
-                _connectionFactory.CreateConnection(
+                connectionFactory.CreateConnection(
                     DatabaseConstants.WebExpress);
 
             await connection.OpenAsync(cancellationToken);
@@ -59,7 +51,7 @@ public sealed class SegmentRepository
 
             var endTime = DateTime.Now;
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Segment precision database call completed. " +
                 "StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}, " +
                 "EndTime: {EndTime:yyyy-MM-dd HH:mm:ss.fff}, " +
@@ -78,7 +70,7 @@ public sealed class SegmentRepository
 
             var endTime = DateTime.Now;
 
-            _logger.LogError(
+            logger.LogError(
                 ex,
                 "Segment precision database call failed. " +
                 "StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}, " +

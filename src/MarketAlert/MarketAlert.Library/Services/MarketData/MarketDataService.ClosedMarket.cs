@@ -10,7 +10,7 @@ public sealed partial class MarketDataService
     {
         var stopwatch = Stopwatch.StartNew();
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "EOD market data processing started. " +
             "Exchange: {Exchange}, TickerCount: {TickerCount}, " +
             "LookbackCandles: {LookbackCandles}",
@@ -26,9 +26,9 @@ public sealed partial class MarketDataService
         // CACHE NOT READY
         // ---------------------------------------------------------
 
-        if (!_eodHistoryCache.IsReady)
+        if (!eodHistoryCache.IsReady)
         {
-            _logger.LogTrace(
+            logger.LogTrace(
                 "EOD cache is not ready. " +
                 "All requested symbols will be skipped. " +
                 "Exchange: {Exchange}, TickerCount: {TickerCount}",
@@ -45,7 +45,7 @@ public sealed partial class MarketDataService
 
             stopwatch.Stop();
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "EOD market data processing completed. " +
                 "Exchange: {Exchange}, ResultCount: {ResultCount}, " +
                 "ElapsedMs: {ElapsedMs}",
@@ -77,7 +77,7 @@ public sealed partial class MarketDataService
         // ---------------------------------------------------------
 
         var exchangeHistory =
-            _eodHistoryCache.GetHistory(exchange);
+            eodHistoryCache.GetHistory(exchange);
 
         // ---------------------------------------------------------
         // PROCESS TICKERS
@@ -98,7 +98,7 @@ public sealed partial class MarketDataService
                         ticker,
                         MarketDataSkipReason.SymbolNotFoundInCache));
 
-                _logger.LogTrace(
+                logger.LogTrace(
                     "Market data symbol skipped. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "Reason: {Reason}",
@@ -120,7 +120,7 @@ public sealed partial class MarketDataService
                         ticker,
                         MarketDataSkipReason.NoHistory));
 
-                _logger.LogTrace(
+                logger.LogTrace(
                     "Market data symbol skipped. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "Reason: {Reason}",
@@ -142,7 +142,7 @@ public sealed partial class MarketDataService
                         ticker,
                         MarketDataSkipReason.InsufficientCandles));
 
-                _logger.LogTrace(
+                logger.LogTrace(
                     "Market data symbol skipped. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "AvailableCandles: {AvailableCandles}, " +
@@ -177,7 +177,7 @@ public sealed partial class MarketDataService
 
         stopwatch.Stop();
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "EOD market data processing completed. " +
             "Exchange: {Exchange}, TickerCount: {TickerCount}, " +
             "ResultCount: {ResultCount}, ElapsedMs: {ElapsedMs}",

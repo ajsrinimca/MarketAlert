@@ -1,32 +1,22 @@
-﻿namespace MarketAlert.Library.HostedServices;
+namespace MarketAlert.Library.HostedServices;
 
-public sealed class SegmentPrecisionCacheWarmupService
+public sealed class SegmentPrecisionCacheWarmupService(
+    IServiceScopeFactory scopeFactory,
+    ISegmentPrecisionCache cache,
+    ILogger<SegmentPrecisionCacheWarmupService> logger)
     : IHostedService
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-    private readonly ISegmentPrecisionCache _cache;
-    private readonly ILogger<SegmentPrecisionCacheWarmupService> _logger;
-
-    public SegmentPrecisionCacheWarmupService(
-        IServiceScopeFactory scopeFactory,
-        ISegmentPrecisionCache cache,
-        ILogger<SegmentPrecisionCacheWarmupService> logger)
-    {
-        _scopeFactory = scopeFactory;
-        _cache = cache;
-        _logger = logger;
-    }
 
     public async Task StartAsync(
         CancellationToken cancellationToken)
     {
-        _logger.LogTrace(
+        logger.LogTrace(
             "Starting segment precision cache warm-up...");
 
         try
         {
             using var scope =
-                _scopeFactory.CreateScope();
+                scopeFactory.CreateScope();
 
             var repository =
                 scope.ServiceProvider
@@ -42,18 +32,18 @@ public sealed class SegmentPrecisionCacheWarmupService
                     "No segment precision configuration was found.");
             }
 
-            _cache.Set(segments);
+            cache.Set(segments);
 
-            _cache.MarkReady();
+            cache.MarkReady();
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Segment precision cache warm-up completed. " +
                 "SegmentCount: {SegmentCount}",
                 segments.Count);
         }
         catch (Exception ex)
         {
-            _logger.LogError(
+            logger.LogError(
                 ex,
                 "Failed to warm up segment precision cache.");
 

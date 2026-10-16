@@ -9,24 +9,12 @@ public interface ITriangleAlertService
         CancellationToken cancellationToken = default);
 }
 
-public sealed class TriangleAlertService : ITriangleAlertService
+public sealed class TriangleAlertService(
+    IMarketDataService marketDataService,
+    IMarketSymbolService marketSymbolService,
+    ITriangleDetectionService triangleDetectionService,
+    ILogger<TriangleAlertService> logger) : ITriangleAlertService
 {
-    private readonly IMarketDataService _marketDataService;
-    private readonly IMarketSymbolService _marketSymbolService;
-    private readonly ITriangleDetectionService _triangleDetectionService;
-    private readonly ILogger<TriangleAlertService> _logger;
-
-    public TriangleAlertService(
-        IMarketDataService marketDataService,
-        IMarketSymbolService marketSymbolService,
-        ITriangleDetectionService triangleDetectionService,
-        ILogger<TriangleAlertService> logger)
-    {
-        _marketDataService = marketDataService;
-        _marketSymbolService = marketSymbolService;
-        _triangleDetectionService = triangleDetectionService;
-        _logger = logger;
-    }
 
     public async Task<TriangleAlertResponse> GetTriangleAlertsAsync(
         string exchange,
@@ -66,7 +54,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
         // REQUEST START
         // ---------------------------------------------------------
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Triangle alert analysis started. " +
             "Exchange: {Exchange}, Group: {Group}, " +
             "IncludeLive: {IncludeLive}",
@@ -85,7 +73,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
             var groupStopwatch = Stopwatch.StartNew();
 
             tickers =
-                await _marketSymbolService.GetTickersByGroupAsync(
+                await marketSymbolService.GetTickersByGroupAsync(
                     group,
                     cancellationToken);
 
@@ -97,7 +85,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Group ticker resolution completed. " +
                 "Exchange: {Exchange}, Group: {Group}, " +
                 "TickerCount: {TickerCount}, ElapsedMs: {ElapsedMs}",
@@ -128,7 +116,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
                         }
                     };
 
-                _logger.LogTrace(
+                logger.LogTrace(
                     "Triangle alert analysis summary. " +
                     "Exchange: {Exchange}, Group: {Group}, " +
                     "IncludeLive: {IncludeLive}, " +
@@ -163,7 +151,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
         var marketDataStopwatch = Stopwatch.StartNew();
 
         var marketData =
-            await _marketDataService.GetMarketDataAsync(
+            await marketDataService.GetMarketDataAsync(
                 exchange,
                 tickers,
                 includeLive,
@@ -171,7 +159,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
 
         marketDataStopwatch.Stop();
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Market data retrieval completed. " +
             "Exchange: {Exchange}, Group: {Group}, " +
             "IncludeLive: {IncludeLive}, ResultCount: {ResultCount}, " +
@@ -227,9 +215,9 @@ public sealed class TriangleAlertService : ITriangleAlertService
             marketData,
             exchange,
             group,
-            _triangleDetectionService.Detect,
+            triangleDetectionService.Detect,
             result => result.IsPatternDetected,
-            _logger,
+            logger,
             "Triangle",
             cancellationToken);
 
@@ -257,7 +245,7 @@ public sealed class TriangleAlertService : ITriangleAlertService
         // ONE TRACE SUMMARY LINE
         // ---------------------------------------------------------
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Triangle alert analysis summary. " +
             "Exchange: {Exchange}, Group: {Group}, " +
             "IncludeLive: {IncludeLive}, " +

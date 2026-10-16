@@ -7,19 +7,12 @@ public interface ISymmetricalTriangleDetectionService
         List<MarketCandle> candles);
 }
 
-internal sealed class SymmetricalTriangleDetectionService
+internal sealed class SymmetricalTriangleDetectionService(
+    ISwingPointService swingPointService,
+    IOptions<TriangleSettings> options)
     : ISymmetricalTriangleDetectionService
 {
-    private readonly ISwingPointService _swingPointService;
-    private readonly TriangleSettings _settings;
-
-    public SymmetricalTriangleDetectionService(
-        ISwingPointService swingPointService,
-        IOptions<TriangleSettings> options)
-    {
-        _swingPointService = swingPointService;
-        _settings = options.Value;
-    }
+    private readonly TriangleSettings _settings = options.Value;
 
     public SymmetricalTriangleResult Detect(
         string ticker,
@@ -41,13 +34,13 @@ internal sealed class SymmetricalTriangleDetectionService
         var orderedCandles = candles;
 
         var swingHighs =
-            _swingPointService.FindSwingHighs(
+            swingPointService.FindSwingHighs(
                 orderedCandles,
                 _settings.SwingLeftBars,
                 _settings.SwingRightBars);
 
         var swingLows =
-            _swingPointService.FindSwingLows(
+            swingPointService.FindSwingLows(
                 orderedCandles,
                 _settings.SwingLeftBars,
                 _settings.SwingRightBars);

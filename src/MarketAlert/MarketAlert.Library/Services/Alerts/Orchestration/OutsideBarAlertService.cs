@@ -1,8 +1,3 @@
-using MarketAlert.Library.Services.Alerts.Common;
-using MarketAlert.Library.Services.Alerts.Detection;
-using MarketAlert.Library.Services.MarketData;
-using MarketAlert.Library.Services.MarketSymbols;
-
 namespace MarketAlert.Library.Services.Alerts.Orchestration;
 
 public interface IOutsideBarAlertService
@@ -14,27 +9,14 @@ public interface IOutsideBarAlertService
         CancellationToken cancellationToken = default);
 }
 
-public sealed class OutsideBarAlertService : IOutsideBarAlertService
+public sealed class OutsideBarAlertService(
+    IMarketDataService marketDataService,
+    IMarketSymbolService marketSymbolService,
+    IOutsideBarDetectionService detectionService,
+    IOptions<OutsideBarSettings> settings,
+    ILogger<OutsideBarAlertService> logger) : IOutsideBarAlertService
 {
-    private readonly IMarketDataService _marketDataService;
-    private readonly IMarketSymbolService _marketSymbolService;
-    private readonly IOutsideBarDetectionService _detectionService;
-    private readonly OutsideBarSettings _settings;
-    private readonly ILogger<OutsideBarAlertService> _logger;
-
-    public OutsideBarAlertService(
-        IMarketDataService marketDataService,
-        IMarketSymbolService marketSymbolService,
-        IOutsideBarDetectionService detectionService,
-        IOptions<OutsideBarSettings> settings,
-        ILogger<OutsideBarAlertService> logger)
-    {
-        _marketDataService = marketDataService;
-        _marketSymbolService = marketSymbolService;
-        _detectionService = detectionService;
-        _settings = settings.Value;
-        _logger = logger;
-    }
+    private readonly OutsideBarSettings _settings = settings.Value;
 
     public async Task<OutsideBarResponse> GetAlertsAsync(
         string exchange,
@@ -59,7 +41,7 @@ public sealed class OutsideBarAlertService : IOutsideBarAlertService
         group = string.IsNullOrWhiteSpace(group) ? null : group.Trim();
         cancellationToken.ThrowIfCancellationRequested();
 
-        _logger.LogInformation(
+        logger.LogInformation(
             "Outside Bar analysis started. Exchange: {Exchange}, " +
             "Group: {Group}, IncludeLive: {IncludeLive}",
             exchange,
@@ -74,7 +56,7 @@ public sealed class OutsideBarAlertService : IOutsideBarAlertService
 
         if (group != null)
         {
-            tickers = await _marketSymbolService.GetTickersByGroupAsync(
+            tickers = await marketSymbolService.GetTickersByGroupAsync(
                 group,
                 cancellationToken);
 
@@ -106,7 +88,7 @@ public sealed class OutsideBarAlertService : IOutsideBarAlertService
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var marketData = await _marketDataService.GetMarketDataAsync(
+        var marketData = await marketDataService.GetMarketDataAsync(
             exchange,
             tickers,
             includeLive,
@@ -142,12 +124,12 @@ public sealed class OutsideBarAlertService : IOutsideBarAlertService
             marketData,
             exchange,
             group,
-            (ticker, candles) => _detectionService.Detect(
+            (ticker, candles) => detectionService.Detect(
                 ticker,
                 candles,
                 liveTickers.Contains(ticker)),
             result => result.IsPatternDetected,
-            _logger,
+            logger,
             "Outside Bar",
             cancellationToken);
 
@@ -166,7 +148,7 @@ public sealed class OutsideBarAlertService : IOutsideBarAlertService
             ElapsedMs = stopwatch.ElapsedMilliseconds
         };
 
-        _logger.LogInformation(
+        logger.LogInformation(
             "Outside Bar analysis completed. Exchange: {Exchange}, " +
             "Group: {Group}, IncludeLive: {IncludeLive}, " +
             "Requested: {Requested}, Processed: {Processed}, " +

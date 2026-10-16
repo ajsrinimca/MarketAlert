@@ -7,19 +7,12 @@ public interface IIslandReversalDetectionService
         List<MarketCandle> candles);
 }
 
-internal sealed class IslandReversalDetectionService
+internal sealed class IslandReversalDetectionService(
+    IOptions<IslandReversalSettings> settings,
+    ILogger<IslandReversalDetectionService> logger)
     : IIslandReversalDetectionService
 {
-    private readonly IslandReversalSettings _settings;
-    private readonly ILogger<IslandReversalDetectionService> _logger;
-
-    public IslandReversalDetectionService(
-        IOptions<IslandReversalSettings> settings,
-        ILogger<IslandReversalDetectionService> logger)
-    {
-        _settings = settings.Value;
-        _logger = logger;
-    }
+    private readonly IslandReversalSettings _settings = settings.Value;
 
     public IslandReversalResult Detect(
         string ticker,
@@ -80,7 +73,7 @@ internal sealed class IslandReversalDetectionService
 
                 if (bottomConfirmation)
                 {
-                    _logger.LogInformation(
+                    logger.LogInformation(
                         "Bottom Island detected. Ticker: {Ticker}, " +
                         "IslandStart: {IslandStart}, IslandEnd: {IslandEnd}, " +
                         "IslandCount: {IslandCount}, PreviousLow: {PreviousLow}, " +
@@ -114,7 +107,7 @@ internal sealed class IslandReversalDetectionService
 
                 if (topConfirmation)
                 {
-                    _logger.LogInformation(
+                    logger.LogInformation(
                         "Top Island detected. Ticker: {Ticker}, " +
                         "IslandStart: {IslandStart}, IslandEnd: {IslandEnd}, " +
                         "IslandCount: {IslandCount}, PreviousHigh: {PreviousHigh}, " +

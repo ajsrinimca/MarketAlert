@@ -1,4 +1,4 @@
-﻿namespace MarketAlert.Library.Repositories;
+namespace MarketAlert.Library.Repositories;
 
 public interface IEodHistoricalDataRepository
 {
@@ -9,19 +9,11 @@ public interface IEodHistoricalDataRepository
         CancellationToken cancellationToken = default);
 }
 
-public sealed class EodHistoricalDataRepository
+public sealed class EodHistoricalDataRepository(
+    IDbConnectionFactory connectionFactory,
+    ILogger<EodHistoricalDataRepository> logger)
     : IEodHistoricalDataRepository
 {
-    private readonly IDbConnectionFactory _connectionFactory;
-    private readonly ILogger<EodHistoricalDataRepository> _logger;
-
-    public EodHistoricalDataRepository(
-        IDbConnectionFactory connectionFactory,
-        ILogger<EodHistoricalDataRepository> logger)
-    {
-        _connectionFactory = connectionFactory;
-        _logger = logger;
-    }
 
     public async Task<Dictionary<string, List<MarketCandle>>> GetDailyCandlesAsync(
         string exchange,
@@ -87,7 +79,7 @@ public sealed class EodHistoricalDataRepository
                 nameof(tickers));
         }
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Starting EOD historical data load. " +
             "Exchange: {Exchange}, RequestedTickerCount: {TickerCount}, " +
             "CandleCount: {CandleCount}",
@@ -102,7 +94,7 @@ public sealed class EodHistoricalDataRepository
         var dbStartTime = DateTime.Now;
         var dbStopwatch = Stopwatch.StartNew();
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "EOD database call started. " +
             "Exchange: {Exchange}",
             normalizedExchange);
@@ -114,7 +106,7 @@ public sealed class EodHistoricalDataRepository
             // -----------------------------------------------------
 
             await using var connection =
-                _connectionFactory.CreateConnection(
+                connectionFactory.CreateConnection(
                     DatabaseConstants.EODData);
 
             await connection.OpenAsync(cancellationToken);
@@ -186,7 +178,7 @@ public sealed class EodHistoricalDataRepository
 
             var dbEndTime = DateTime.Now;
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "EOD database call completed. " +
                 "Exchange: {Exchange}, StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}, " +
                 "EndTime: {EndTime:yyyy-MM-dd HH:mm:ss.fff}, " +
@@ -233,7 +225,7 @@ public sealed class EodHistoricalDataRepository
                         ticker,
                         out var candles))
                 {
-                    _logger.LogWarning(
+                    logger.LogWarning(
                         "EOD history not found. " +
                         "Exchange: {Exchange}, Ticker: {Ticker}, " +
                         "RequestedCandles: {RequestedCandles}",
@@ -246,7 +238,7 @@ public sealed class EodHistoricalDataRepository
 
                 if (candles.Count == 0)
                 {
-                    _logger.LogWarning(
+                    logger.LogWarning(
                         "EOD history contains no candles. " +
                         "Exchange: {Exchange}, Ticker: {Ticker}",
                         normalizedExchange,
@@ -268,7 +260,7 @@ public sealed class EodHistoricalDataRepository
 
                 if (candles.Count < candleCount)
                 {
-                    _logger.LogTrace(
+                    logger.LogTrace(
                         "EOD history is insufficient. " +
                         "Exchange: {Exchange}, Ticker: {Ticker}, " +
                         "SymbolId: {SymbolId}, AvailableCandles: {AvailableCandles}, " +
@@ -298,7 +290,7 @@ public sealed class EodHistoricalDataRepository
             var insufficientTickerCount =
                 result.Values.Count(x => x.Count < candleCount);
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "EOD historical data load completed. " +
                 "Exchange: {Exchange}, RequestedTickers: {RequestedTickers}, " +
                 "FoundTickers: {FoundTickers}, MissingTickers: {MissingTickers}, " +
@@ -324,7 +316,7 @@ public sealed class EodHistoricalDataRepository
 
             var dbEndTime = DateTime.Now;
 
-            _logger.LogError(
+            logger.LogError(
                 ex,
                 "EOD database call failed. " +
                 "Exchange: {Exchange}, StartTime: {StartTime:yyyy-MM-dd HH:mm:ss.fff}, " +

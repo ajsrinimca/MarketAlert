@@ -8,19 +8,12 @@ public interface IOutsideBarDetectionService
         bool isProvisional);
 }
 
-internal sealed class OutsideBarDetectionService
+internal sealed class OutsideBarDetectionService(
+    IOptions<OutsideBarSettings> settings,
+    ILogger<OutsideBarDetectionService> logger)
     : IOutsideBarDetectionService
 {
-    private readonly OutsideBarSettings _settings;
-    private readonly ILogger<OutsideBarDetectionService> _logger;
-
-    public OutsideBarDetectionService(
-        IOptions<OutsideBarSettings> settings,
-        ILogger<OutsideBarDetectionService> logger)
-    {
-        _settings = settings.Value;
-        _logger = logger;
-    }
+    private readonly OutsideBarSettings _settings = settings.Value;
 
     public OutsideBarResult Detect(
         string ticker,
@@ -37,7 +30,7 @@ internal sealed class OutsideBarDetectionService
         if (candles == null ||
             candles.Count < _settings.RequiredDailyCandles)
         {
-            _logger.LogWarning(
+            logger.LogWarning(
                 "Insufficient daily candles for Outside Bar evaluation. " +
                 "Ticker: {Ticker}, Available: {Available}, Required: {Required}",
                 ticker,
@@ -65,7 +58,7 @@ internal sealed class OutsideBarDetectionService
             current.High > previous.High &&
             current.Low < previous.Low;
 
-        _logger.LogDebug(
+        logger.LogDebug(
             "Outside Bar range evaluated. Ticker: {Ticker}, " +
             "CurrentHigh: {CurrentHigh}, PreviousHigh: {PreviousHigh}, " +
             "CurrentLow: {CurrentLow}, PreviousLow: {PreviousLow}, " +
@@ -95,7 +88,7 @@ internal sealed class OutsideBarDetectionService
         }
         else
         {
-            _logger.LogDebug(
+            logger.LogDebug(
                 "Outside Bar range matched but candle direction is neutral. " +
                 "Ticker: {Ticker}, Open: {Open}, Close: {Close}",
                 ticker,
@@ -107,7 +100,7 @@ internal sealed class OutsideBarDetectionService
 
         result.IsPatternDetected = true;
 
-        _logger.LogInformation(
+        logger.LogInformation(
             "Outside Bar detected. Ticker: {Ticker}, PatternType: {PatternType}, " +
             "CandleDate: {CandleDate}, EvaluationMode: {EvaluationMode}, " +
             "IsProvisional: {IsProvisional}",

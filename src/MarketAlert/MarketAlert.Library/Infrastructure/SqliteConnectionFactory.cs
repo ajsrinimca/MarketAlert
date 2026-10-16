@@ -5,15 +5,8 @@ public interface IDbConnectionFactory
     SqliteConnection CreateConnection(string connectionName);
 }
 
-public class SqliteConnectionFactory : IDbConnectionFactory
+public class SqliteConnectionFactory(IConfiguration configuration) : IDbConnectionFactory
 {
-    private readonly IConfiguration _configuration;
-
-    public SqliteConnectionFactory(
-        IConfiguration configuration)
-    {
-        _configuration = configuration;
-    }
 
     public SqliteConnection CreateConnection(
         string connectionName)
@@ -26,7 +19,7 @@ public class SqliteConnectionFactory : IDbConnectionFactory
         }
 
         var connectionString =
-            _configuration.GetConnectionString(connectionName);
+            configuration.GetConnectionString(connectionName);
 
         if (string.IsNullOrWhiteSpace(connectionString))
         {

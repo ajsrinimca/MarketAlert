@@ -8,19 +8,11 @@ public interface IMarketStatusService
         CancellationToken cancellationToken = default);
 }
 
-public sealed class MarketStatusService
+public sealed class MarketStatusService(
+    IMarketTimingCache marketTimingCache,
+    ILogger<MarketStatusService> logger)
     : IMarketStatusService
 {
-    private readonly IMarketTimingCache _marketTimingCache;
-    private readonly ILogger<MarketStatusService> _logger;
-
-    public MarketStatusService(
-        IMarketTimingCache marketTimingCache,
-        ILogger<MarketStatusService> logger)
-    {
-        _marketTimingCache = marketTimingCache;
-        _logger = logger;
-    }
 
     public Task<Models.MarketStatus.MarketStatus> GetMarketStatusAsync(
         string exchange,
@@ -46,7 +38,7 @@ public sealed class MarketStatusService
         segment =
             segment.Trim().ToUpperInvariant();
 
-        if (!_marketTimingCache.IsReady)
+        if (!marketTimingCache.IsReady)
         {
             throw new InvalidOperationException(
                 "Market timing cache is not ready.");
@@ -59,13 +51,13 @@ public sealed class MarketStatusService
             currentDateTime.TimeOfDay;
 
         var timings =
-            _marketTimingCache.GetTimings(
+            marketTimingCache.GetTimings(
                 exchange,
                 segment);
 
         if (timings.Count == 0)
         {
-            _logger.LogDebug(
+            logger.LogDebug(
                 "No market timing configuration found for {Exchange}/{Segment}",
                 exchange,
                 segment);
@@ -82,7 +74,7 @@ public sealed class MarketStatusService
                     timing.StartTime,
                     out var startTime))
             {
-                _logger.LogDebug(
+                logger.LogDebug(
                     "Invalid StartTime '{StartTime}' for {Exchange}/{Segment}",
                     timing.StartTime,
                     exchange,
@@ -95,7 +87,7 @@ public sealed class MarketStatusService
                     timing.EndTime,
                     out var endTime))
             {
-                _logger.LogDebug(
+                logger.LogDebug(
                     "Invalid EndTime '{EndTime}' for {Exchange}/{Segment}",
                     timing.EndTime,
                     exchange,
@@ -116,7 +108,7 @@ public sealed class MarketStatusService
 
         if (matchingTiming == null)
         {
-            _logger.LogDebug(
+            logger.LogDebug(
                 "No matching market state found for {Exchange}/{Segment} " +
                 "at {CurrentTime}",
                 exchange,
@@ -158,7 +150,7 @@ public sealed class MarketStatusService
             CurrentDateTime = currentDateTime
         };
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Market status calculated from cache. " +
             "Exchange: {Exchange}, Segment: {Segment}, " +
             "Status: {Status}, IsMarketOpen: {IsMarketOpen}, " +

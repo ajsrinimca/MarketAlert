@@ -7,23 +7,16 @@ public interface IRoundingBottomDetectionService
         List<MarketCandle> candles);
 }
 
-internal sealed class RoundingBottomDetectionService
+internal sealed class RoundingBottomDetectionService(
+    IOptions<RoundingBottomSettings> settings,
+    ILogger<RoundingBottomDetectionService> logger)
     : IRoundingBottomDetectionService
 {
     private const int SmaPeriod = 20;
 
     private const decimal EdgeTolerancePercent = 5m;
 
-    private readonly RoundingBottomSettings _settings;
-    private readonly ILogger<RoundingBottomDetectionService> _logger;
-
-    public RoundingBottomDetectionService(
-        IOptions<RoundingBottomSettings> settings,
-        ILogger<RoundingBottomDetectionService> logger)
-    {
-        _settings = settings.Value;
-        _logger = logger;
-    }
+    private readonly RoundingBottomSettings _settings = settings.Value;
 
     public RoundingBottomResult Detect(
         string ticker,
@@ -41,7 +34,7 @@ internal sealed class RoundingBottomDetectionService
         if (candles == null ||
             candles.Count < _settings.LookbackCandles)
         {
-            _logger.LogWarning(
+            logger.LogWarning(
                 "Insufficient candles for Rounding Bottom analysis. " +
                 "Ticker: {Ticker}, Required: {Required}, Available: {Available}",
                 ticker,
@@ -90,7 +83,7 @@ internal sealed class RoundingBottomDetectionService
                 analysisWindow.FindIndex(x => x.Low == lowestLow);
         }
 
-        _logger.LogInformation(
+        logger.LogInformation(
             "Rounding Bottom lowest low identified. Ticker: {Ticker}, " +
             "LowestLow: {LowestLow}, LowestLowIndex: {LowestLowIndex}, " +
             "FirstThird: [{FirstStart}, {FirstEnd}), " +
@@ -233,7 +226,7 @@ internal sealed class RoundingBottomDetectionService
         result.LastCandleDate =
             lastCandle.Date.ToString("yyyy-MM-dd");
 
-        _logger.LogInformation(
+        logger.LogInformation(
             "Rounding Bottom SMA20 calculated. Ticker: {Ticker}, " +
             "FirstStart: {FirstStart}, FirstEnd: {FirstEnd}, " +
             "MiddleStart: {MiddleStart}, MiddleEnd: {MiddleEnd}, " +
@@ -263,7 +256,7 @@ internal sealed class RoundingBottomDetectionService
 
         if (!result.IsPatternDetected)
         {
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Rounding Bottom not detected. Ticker: {Ticker}, " +
                 "LowestLowInMiddle: {LowestLowInMiddle}, " +
                 "SmaFalls: {SmaFalls}, SmaFlattens: {SmaFlattens}, " +
@@ -278,7 +271,7 @@ internal sealed class RoundingBottomDetectionService
             return result;
         }
 
-        _logger.LogInformation(
+        logger.LogInformation(
             "Rounding Bottom detected. Ticker: {Ticker}, LowestLow: {LowestLow}, " +
             "LowestLowIndex: {LowestLowIndex}, EdgeDifferencePercentage: {EdgeDifferencePercentage}",
             ticker,

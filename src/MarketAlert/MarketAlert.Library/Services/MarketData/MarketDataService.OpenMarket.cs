@@ -11,7 +11,7 @@ public sealed partial class MarketDataService
     {
         var stopwatch = Stopwatch.StartNew();
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Open market data processing started. " +
             "Exchange: {Exchange}, TickerCount: {TickerCount}, " +
             "LookbackCandles: {LookbackCandles}",
@@ -27,9 +27,9 @@ public sealed partial class MarketDataService
         // CACHE NOT READY
         // ---------------------------------------------------------
 
-        if (!_eodHistoryCache.IsReady)
+        if (!eodHistoryCache.IsReady)
         {
-            _logger.LogTrace(
+            logger.LogTrace(
                 "EOD cache is not ready for live analysis. " +
                 "All requested symbols will be skipped. " +
                 "Exchange: {Exchange}, TickerCount: {TickerCount}",
@@ -46,7 +46,7 @@ public sealed partial class MarketDataService
 
             stopwatch.Stop();
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Open market data processing completed. " +
                 "Exchange: {Exchange}, ResultCount: {ResultCount}, " +
                 "ElapsedMs: {ElapsedMs}",
@@ -62,7 +62,7 @@ public sealed partial class MarketDataService
         // ---------------------------------------------------------
 
         var exchangeHistory =
-            _eodHistoryCache.GetHistory(exchange);
+            eodHistoryCache.GetHistory(exchange);
 
         // ---------------------------------------------------------
         // GET HISTORICAL DATA
@@ -87,7 +87,7 @@ public sealed partial class MarketDataService
                         ticker,
                         MarketDataSkipReason.SymbolNotFoundInCache));
 
-                _logger.LogTrace(
+                logger.LogTrace(
                     "Market data symbol skipped. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "Reason: {Reason}",
@@ -109,7 +109,7 @@ public sealed partial class MarketDataService
                         ticker,
                         MarketDataSkipReason.NoHistory));
 
-                _logger.LogTrace(
+                logger.LogTrace(
                     "Market data symbol skipped. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "Reason: {Reason}",
@@ -131,7 +131,7 @@ public sealed partial class MarketDataService
                         ticker,
                         MarketDataSkipReason.InsufficientCandles));
 
-                _logger.LogTrace(
+                logger.LogTrace(
                     "Market data symbol skipped. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "AvailableCandles: {AvailableCandles}, " +
@@ -160,7 +160,7 @@ public sealed partial class MarketDataService
         {
             stopwatch.Stop();
 
-            _logger.LogTrace(
+            logger.LogTrace(
                 "Open market data processing completed without valid " +
                 "historical symbols. Exchange: {Exchange}, " +
                 "ResultCount: {ResultCount}, ElapsedMs: {ElapsedMs}",
@@ -176,11 +176,11 @@ public sealed partial class MarketDataService
         // ---------------------------------------------------------
 
         var liveResponse =
-            await _liveMarketDataService.GetLiveQuotesAsync(
+            await liveMarketDataService.GetLiveQuotesAsync(
                 exchange,
                 cancellationToken);
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Live quotes received for market data processing. " +
             "Exchange: {Exchange}, QuoteCount: {QuoteCount}",
             exchange,
@@ -231,7 +231,7 @@ public sealed partial class MarketDataService
                         ticker,
                         MarketDataSkipReason.LiveQuoteMissing));
 
-                _logger.LogTrace(
+                logger.LogTrace(
                     "Market data symbol skipped during live merge. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "Reason: {Reason}",
@@ -257,7 +257,7 @@ public sealed partial class MarketDataService
                         ticker,
                         MarketDataSkipReason.InvalidLiveQuote));
 
-                _logger.LogTrace(
+                logger.LogTrace(
                     "Market data symbol skipped during live merge. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "Reason: {Reason}",
@@ -303,7 +303,7 @@ public sealed partial class MarketDataService
                 candles[sameDateIndex] =
                     liveCandle;
 
-                _logger.LogTrace(
+                logger.LogTrace(
                     "Today's EOD candle replaced with live candle. " +
                     "Exchange: {Exchange}, Ticker: {Ticker}, " +
                     "Date: {Date:yyyy-MM-dd}",
@@ -338,7 +338,7 @@ public sealed partial class MarketDataService
 
         stopwatch.Stop();
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Open market data processing completed. " +
             "Exchange: {Exchange}, TickerCount: {TickerCount}, " +
             "ResultCount: {ResultCount}, ElapsedMs: {ElapsedMs}",

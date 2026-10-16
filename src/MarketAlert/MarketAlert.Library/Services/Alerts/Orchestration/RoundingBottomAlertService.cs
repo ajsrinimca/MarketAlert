@@ -9,31 +9,16 @@ public interface IRoundingBottomAlertService
         CancellationToken cancellationToken = default);
 }
 
-public sealed class RoundingBottomAlertService
+public sealed class RoundingBottomAlertService(
+    IMarketDataService marketDataService,
+    IMarketSymbolService marketSymbolService,
+    IRoundingBottomDetectionService detectionService,
+    IOptions<RoundingBottomSettings> settings,
+    MarketAlertOptions marketAlertOptions,
+    ILogger<RoundingBottomAlertService> logger)
     : IRoundingBottomAlertService
 {
-    private readonly IMarketDataService _marketDataService;
-    private readonly IMarketSymbolService _marketSymbolService;
-    private readonly IRoundingBottomDetectionService _detectionService;
-    private readonly RoundingBottomSettings _settings;
-    private readonly MarketAlertOptions _marketAlertOptions;
-    private readonly ILogger<RoundingBottomAlertService> _logger;
-
-    public RoundingBottomAlertService(
-        IMarketDataService marketDataService,
-        IMarketSymbolService marketSymbolService,
-        IRoundingBottomDetectionService detectionService,
-        IOptions<RoundingBottomSettings> settings,
-        MarketAlertOptions marketAlertOptions,
-        ILogger<RoundingBottomAlertService> logger)
-    {
-        _marketDataService = marketDataService;
-        _marketSymbolService = marketSymbolService;
-        _detectionService = detectionService;
-        _settings = settings.Value;
-        _marketAlertOptions = marketAlertOptions;
-        _logger = logger;
-    }
+    private readonly RoundingBottomSettings _settings = settings.Value;
 
     public async Task<RoundingBottomResponse> GetAlertsAsync(
         string exchange,
@@ -63,7 +48,7 @@ public sealed class RoundingBottomAlertService
         // REQUEST START
         // ---------------------------------------------------------
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Rounding Bottom analysis started. Exchange: {Exchange}, " +
             "Group: {Group}, IncludeLive: {IncludeLive}, CandleCount: {CandleCount}",
             exchange,
@@ -79,7 +64,7 @@ public sealed class RoundingBottomAlertService
 
         if (group != null)
         {
-            tickers = await _marketSymbolService.GetTickersByGroupAsync(
+            tickers = await marketSymbolService.GetTickersByGroupAsync(
                 group,
                 cancellationToken);
 
@@ -111,9 +96,9 @@ public sealed class RoundingBottomAlertService
 
         var historyCandles = Math.Min(
             _settings.LookbackCandles + 19,
-            _marketAlertOptions.EodCandleCount);
+            marketAlertOptions.EodCandleCount);
 
-        var marketData = await _marketDataService.GetMarketDataAsync(
+        var marketData = await marketDataService.GetMarketDataAsync(
             exchange,
             tickers,
             includeLive,
@@ -149,9 +134,9 @@ public sealed class RoundingBottomAlertService
             marketData,
             exchange,
             group,
-            _detectionService.Detect,
+            detectionService.Detect,
             result => result.IsPatternDetected,
-            _logger,
+            logger,
             "Rounding Bottom",
             cancellationToken);
 
@@ -174,7 +159,7 @@ public sealed class RoundingBottomAlertService
             ElapsedMs = stopwatch.ElapsedMilliseconds
         };
 
-        _logger.LogTrace(
+        logger.LogTrace(
             "Rounding Bottom analysis summary. Exchange: {Exchange}, " +
             "Group: {Group}, IncludeLive: {IncludeLive}, Requested: {Requested}, " +
             "Processed: {Processed}, Detected: {Detected}, Skipped: {Skipped}, " +
