@@ -19,6 +19,8 @@ public static partial class ServiceExtensions
         IReadOnlyList<string> nseSymbols,
         IReadOnlyList<string> bseSymbols)
     {
+        services.AddSingleton<CacheWarmupStartupBudget>();
+
         services.AddConfiguration(
             configuration,
             nseSymbols,

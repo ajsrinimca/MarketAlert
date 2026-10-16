@@ -1,4 +1,7 @@
 {
+  "CacheWarmup": {
+    "StartupWaitSeconds": 10
+  },
   "MarketData": {
     "EodCandleCount": 120
   },

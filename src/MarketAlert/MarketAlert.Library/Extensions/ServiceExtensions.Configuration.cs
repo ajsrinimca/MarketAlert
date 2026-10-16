@@ -12,6 +12,13 @@ public static partial class ServiceExtensions
         ArgumentNullException.ThrowIfNull(nseSymbols);
         ArgumentNullException.ThrowIfNull(bseSymbols);
 
+        services.AddOptions<CacheWarmupSettings>()
+            .Bind(configuration.GetSection("CacheWarmup"))
+            .Validate(
+                settings => settings.StartupWaitSeconds >= 0,
+                "CacheWarmup:StartupWaitSeconds must be zero or greater.")
+            .ValidateOnStart();
+
         var eodCandleCount =
             configuration.GetValue<int>(
                 "MarketData:EodCandleCount",

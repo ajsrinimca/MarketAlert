@@ -2,38 +2,25 @@ namespace MarketAlert.Library.HostedServices;
 
 public sealed class EodHistoryCacheWarmupService(
     IServiceScopeFactory scopeFactory,
-    ILogger<EodHistoryCacheWarmupService> logger)
-    : IHostedService
+    ILogger<EodHistoryCacheWarmupService> logger,
+    CacheWarmupStartupBudget startupBudget)
+    : CacheWarmupHostedService<EodHistoryCacheWarmupService>(
+        logger,
+        startupBudget)
 {
-
-    public async Task StartAsync(
+    protected override async Task WarmupAsync(
         CancellationToken cancellationToken)
     {
-        try
-        {
-            using var scope =
-                scopeFactory.CreateScope();
+        await using var scope =
+            scopeFactory.CreateAsyncScope();
 
-            var service =
-                scope.ServiceProvider
-                    .GetRequiredService<IEodHistoricalDataService>();
+        var service =
+            scope.ServiceProvider
+                .GetRequiredService<IEodHistoricalDataService>();
 
-            await service.LoadHistoryToCacheAsync(
-                cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(
-                ex,
-                "Failed to warm up EOD history cache.");
-
-            throw;
-        }
+        await service.LoadHistoryToCacheAsync(
+            cancellationToken);
     }
 
-    public Task StopAsync(
-        CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
+    protected override string CacheName => "EOD history";
 }

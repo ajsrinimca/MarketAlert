@@ -25,41 +25,37 @@ public sealed class EodHistoricalDataService(
             options.BseSymbols.Count,
             options.EodCandleCount);
 
+        var nseHistoryTask = Task.Run(
+            () => LoadHistoryAsync("NSE", options.NseSymbols),
+            cancellationToken);
+
+        var bseHistoryTask = Task.Run(
+            () => LoadHistoryAsync("BSE", options.BseSymbols),
+            cancellationToken);
+
+        await Task.WhenAll(
+            nseHistoryTask,
+            bseHistoryTask);
+
         if (options.NseSymbols.Count > 0)
         {
-            var nseHistory =
-                await repository.GetDailyCandlesAsync(
-                    "NSE",
-                    options.NseSymbols,
-                    options.EodCandleCount,
-                    cancellationToken);
+            var nseHistory = await nseHistoryTask;
 
-            cache.SetHistory(
-                "NSE",
-                nseHistory);
+            cache.SetHistory("NSE", nseHistory);
 
             logger.LogTrace(
-                "NSE EOD history cached. " +
-                "Ticker count: {TickerCount}",
+                "NSE EOD history cached. Ticker count: {TickerCount}",
                 nseHistory.Count);
         }
 
         if (options.BseSymbols.Count > 0)
         {
-            var bseHistory =
-                await repository.GetDailyCandlesAsync(
-                    "BSE",
-                    options.BseSymbols,
-                    options.EodCandleCount,
-                    cancellationToken);
+            var bseHistory = await bseHistoryTask;
 
-            cache.SetHistory(
-                "BSE",
-                bseHistory);
+            cache.SetHistory("BSE", bseHistory);
 
             logger.LogTrace(
-                "BSE EOD history cached. " +
-                "Ticker count: {TickerCount}",
+                "BSE EOD history cached. Ticker count: {TickerCount}",
                 bseHistory.Count);
         }
 
@@ -67,5 +63,20 @@ public sealed class EodHistoricalDataService(
 
         logger.LogTrace(
             "EOD history cache warm-up completed successfully.");
+
+        Task<Dictionary<string, List<MarketCandle>>> LoadHistoryAsync(
+            string exchange,
+            IReadOnlyList<string> symbols)
+        {
+            return symbols.Count == 0
+                ? Task.FromResult(
+                    new Dictionary<string, List<MarketCandle>>(
+                        StringComparer.OrdinalIgnoreCase))
+                : repository.GetDailyCandlesAsync(
+                    exchange,
+                    symbols,
+                    options.EodCandleCount,
+                    cancellationToken);
+        }
     }
 }

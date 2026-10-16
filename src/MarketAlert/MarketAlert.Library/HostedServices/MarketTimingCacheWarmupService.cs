@@ -3,57 +3,37 @@ namespace MarketAlert.Library.HostedServices;
 public sealed class MarketTimingCacheWarmupService(
     IServiceScopeFactory scopeFactory,
     IMarketTimingCache cache,
-    ILogger<MarketTimingCacheWarmupService> logger)
-    : IHostedService
+    ILogger<MarketTimingCacheWarmupService> logger,
+    CacheWarmupStartupBudget startupBudget)
+    : CacheWarmupHostedService<MarketTimingCacheWarmupService>(
+        logger,
+        startupBudget)
 {
-
-    public async Task StartAsync(
+    protected override async Task WarmupAsync(
         CancellationToken cancellationToken)
     {
-        logger.LogTrace(
-            "Starting market timing cache warm-up...");
+        await using var scope =
+            scopeFactory.CreateAsyncScope();
 
-        try
+        var repository =
+            scope.ServiceProvider
+                .GetRequiredService<IMarketTimingRepository>();
+
+        var timings =
+            await repository.GetMarketTimingsAsync(
+                cancellationToken);
+
+        if (timings.Count == 0)
         {
-            using var scope =
-                scopeFactory.CreateScope();
-
-            var repository =
-                scope.ServiceProvider
-                    .GetRequiredService<IMarketTimingRepository>();
-
-            var timings =
-                await repository.GetMarketTimingsAsync(
-                    cancellationToken);
-
-            if (timings.Count == 0)
-            {
-                throw new InvalidOperationException(
-                    "No market timing configuration was found.");
-            }
-
-            cache.SetTimings(timings);
-
-            cache.MarkReady();
-
-            logger.LogTrace(
-                "Market timing cache warm-up completed. " +
-                "TimingCount: {TimingCount}",
-                timings.Count);
+            throw new InvalidOperationException(
+                "No market timing configuration was found.");
         }
-        catch (Exception ex)
-        {
-            logger.LogError(
-                ex,
-                "Failed to warm up market timing cache.");
 
-            throw;
-        }
+        cache.SetTimings(timings);
+        cache.MarkReady();
+
+        LogCachePopulated("TimingCount", timings.Count);
     }
 
-    public Task StopAsync(
-        CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
+    protected override string CacheName => "Market timing";
 }

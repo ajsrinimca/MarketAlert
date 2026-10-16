@@ -3,57 +3,37 @@ namespace MarketAlert.Library.HostedServices;
 public sealed class SegmentPrecisionCacheWarmupService(
     IServiceScopeFactory scopeFactory,
     ISegmentPrecisionCache cache,
-    ILogger<SegmentPrecisionCacheWarmupService> logger)
-    : IHostedService
+    ILogger<SegmentPrecisionCacheWarmupService> logger,
+    CacheWarmupStartupBudget startupBudget)
+    : CacheWarmupHostedService<SegmentPrecisionCacheWarmupService>(
+        logger,
+        startupBudget)
 {
-
-    public async Task StartAsync(
+    protected override async Task WarmupAsync(
         CancellationToken cancellationToken)
     {
-        logger.LogTrace(
-            "Starting segment precision cache warm-up...");
+        await using var scope =
+            scopeFactory.CreateAsyncScope();
 
-        try
+        var repository =
+            scope.ServiceProvider
+                .GetRequiredService<ISegmentRepository>();
+
+        var segments =
+            await repository.GetAllPrecisionsAsync(
+                cancellationToken);
+
+        if (segments.Count == 0)
         {
-            using var scope =
-                scopeFactory.CreateScope();
-
-            var repository =
-                scope.ServiceProvider
-                    .GetRequiredService<ISegmentRepository>();
-
-            var segments =
-                await repository.GetAllPrecisionsAsync(
-                    cancellationToken);
-
-            if (segments.Count == 0)
-            {
-                throw new InvalidOperationException(
-                    "No segment precision configuration was found.");
-            }
-
-            cache.Set(segments);
-
-            cache.MarkReady();
-
-            logger.LogTrace(
-                "Segment precision cache warm-up completed. " +
-                "SegmentCount: {SegmentCount}",
-                segments.Count);
+            throw new InvalidOperationException(
+                "No segment precision configuration was found.");
         }
-        catch (Exception ex)
-        {
-            logger.LogError(
-                ex,
-                "Failed to warm up segment precision cache.");
 
-            throw;
-        }
+        cache.Set(segments);
+        cache.MarkReady();
+
+        LogCachePopulated("SegmentCount", segments.Count);
     }
 
-    public Task StopAsync(
-        CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
+    protected override string CacheName => "Segment precision";
 }
