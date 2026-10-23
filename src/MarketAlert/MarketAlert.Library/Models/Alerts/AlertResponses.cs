@@ -23,6 +23,31 @@ public sealed class OutsideBarResponse
 {
 }
 
+public sealed class DoubleTopBottomResponse
+    : AlertResponse<DoubleTopBottomResult>
+{
+}
+
+public sealed class HeadAndShouldersResponse
+    : AlertResponse<HeadAndShouldersResult>
+{
+}
+
+public sealed class CupHandleResponse
+    : AlertResponse<CupHandleResult>
+{
+}
+
+public sealed class MarubozuResponse
+    : AlertResponse<MarubozuResult>
+{
+}
+
+public sealed class ThreeWhiteSoldiersResponse
+    : AlertResponse<ThreeWhiteSoldiersResult>
+{
+}
+
 public sealed class IslandReversalResponse
     : AlertResponse<IslandReversalResult>
 {

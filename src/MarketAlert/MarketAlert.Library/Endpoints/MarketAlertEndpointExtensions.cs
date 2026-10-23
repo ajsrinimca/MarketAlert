@@ -14,7 +14,12 @@ public static class MarketAlertEndpointExtensions
         group.MapRectangleBreakoutEndpoints();
         group.MapRoundingBottomEndpoints();
         group.MapIslandReversalEndpoints();
-
+        group.MapHeadAndShouldersEndpoints();
+        group.MapDoubleTopBottomEndpoints();
+        group.MapCupHandleEndpoints();
+        group.MapMarubozuEndpoints();
+        group.MapThreeWhiteSoldiersEndpoints();
+        
         return endpoints;
     }
 }

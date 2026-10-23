@@ -3,7 +3,7 @@
     "StartupWaitSeconds": 10
   },
   "MarketData": {
-    "EodCandleCount": 120
+    "EodCandleCount": 140
   },
   "Triangle": {
     "MinLookbackCandles": 20,
@@ -14,6 +14,20 @@
     "SwingRightBars": 2,
     "MinimumSwingHighs": 2,
     "MinimumSwingLows": 2
+  },
+  "SwingPatterns": {
+    "PatternLookbackCandles": 60,
+    "TrendLookbackCandles": 20,
+    "SwingLeftBars": 2,
+    "SwingRightBars": 2
+  },
+  "CupHandle": {
+    "MinimumCupCandles": 30,
+    "MaximumCupCandles": 120,
+    "MinimumHandleCandles": 5,
+    "MaximumHandleCandles": 20,
+    "RoundedBottomCandles": 5,
+    "RoundedBottomTolerancePercent": 3.0
   },
   "RectangleBreakout": {
     "LookbackCandles": 30
@@ -29,6 +43,17 @@
   },
   "OutsideBar": {
     "RequiredDailyCandles": 2
+  },
+  "Marubozu": {
+    "AverageBodyLookbackCandles": 10,
+    "LiveEvaluationCadenceMinutes": 15,
+    "MinimumBodyToRangeRatio": 0.9,
+    "MaximumShadowToRangeRatio": 0.05
+  },
+  "ThreeWhiteSoldiers": {
+    "LiveEvaluationCadenceMinutes": 15,
+    "RequiredDailyCandles": 13,
+    "MaximumShadowToRangeRatio": 0.1
   },
   "LiveMarket": {
     "BaseUrl": "https://dartstock-uatserv.upstox.com/",

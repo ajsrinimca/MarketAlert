@@ -24,6 +24,39 @@ public static partial class ServiceExtensions
                 "MarketData:EodCandleCount",
                 120);
 
+        services.AddOptions<SwingPatternSettings>()
+            .Bind(configuration.GetSection("SwingPatterns"))
+            .Validate(
+                settings =>
+                    settings.PatternLookbackCandles >= 30 &&
+                    settings.PatternLookbackCandles <= 60 &&
+                    settings.TrendLookbackCandles >= 2 &&
+                    settings.SwingLeftBars > 0 &&
+                    settings.SwingRightBars > 0 &&
+                    settings.RequiredHistoryCandles <= eodCandleCount,
+                "SwingPatterns requires a pattern lookback from 30 to 60 candles, " +
+                "a trend lookback of at least 2 candles, positive swing confirmation " +
+                "bars, and total required history within MarketData:EodCandleCount.")
+            .ValidateOnStart();
+
+        services.AddOptions<CupHandleSettings>()
+            .Bind(configuration.GetSection("CupHandle"))
+            .Validate(
+                settings =>
+                    settings.MinimumCupCandles >= 30 &&
+                    settings.MaximumCupCandles <= 120 &&
+                    settings.MaximumCupCandles >= settings.MinimumCupCandles &&
+                    settings.MinimumHandleCandles >= 5 &&
+                    settings.MaximumHandleCandles <= 20 &&
+                    settings.MaximumHandleCandles >= settings.MinimumHandleCandles &&
+                    settings.RoundedBottomCandles >= 2 &&
+                    settings.RoundedBottomTolerancePercent > 0 &&
+                    settings.RequiredHistoryCandles <= eodCandleCount,
+                "CupHandle settings require a 30–120 candle cup, a 5–20 candle handle, " +
+                "valid rounded-bottom settings, and enough MarketData:EodCandleCount " +
+                "for the maximum cup and handle.")
+            .ValidateOnStart();
+
         var maxLookbackCandles =
             configuration.GetValue<int>(
                 "Triangle:MaxLookbackCandles");
@@ -99,6 +132,29 @@ public static partial class ServiceExtensions
                     settings.RequiredDailyCandles == 2 &&
                     settings.RequiredDailyCandles <= eodCandleCount,
                 "OutsideBar:RequiredDailyCandles must be exactly 2 and fit within MarketData:EodCandleCount.")
+            .ValidateOnStart();
+
+        services.AddOptions<MarubozuSettings>()
+            .Bind(configuration.GetSection("Marubozu"))
+            .Validate(
+                settings =>
+                    settings.AverageBodyLookbackCandles == 10 &&
+                    settings.LiveEvaluationCadenceMinutes is 15 or 30 or 60 &&
+                    settings.MinimumBodyToRangeRatio == 0.9m &&
+                    settings.MaximumShadowToRangeRatio == 0.05m &&
+                    settings.RequiredDailyCandles <= eodCandleCount,
+                "Marubozu requires 10 prior daily candles, supported live cadence (15, 30, or 60 minutes), specified body/shadow thresholds, and sufficient EOD history.")
+            .ValidateOnStart();
+
+        services.AddOptions<ThreeWhiteSoldiersSettings>()
+            .Bind(configuration.GetSection("ThreeWhiteSoldiers"))
+            .Validate(
+                settings =>
+                    settings.RequiredDailyCandles == 13 &&
+                    settings.LiveEvaluationCadenceMinutes is 15 or 30 or 60 &&
+                    settings.MaximumShadowToRangeRatio == 0.1m &&
+                    settings.RequiredDailyCandles <= eodCandleCount,
+                "ThreeWhiteSoldiers requires exactly 13 daily candles, a supported live cadence (15, 30, or 60 minutes), the specified 10% shadow threshold, and sufficient EOD history.")
             .ValidateOnStart();
 
         return services;
