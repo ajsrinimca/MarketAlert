@@ -19,6 +19,10 @@ public static class MarketAlertEndpointExtensions
         group.MapCupHandleEndpoints();
         group.MapMarubozuEndpoints();
         group.MapThreeWhiteSoldiersEndpoints();
+        group.MapBlockBulkDealEndpoints();
+        group.MapShortCoveringEndpoints();
+        group.MapInsideBarNr7Nr4Endpoints();
+        group.MapLongUnwindingEndpoints();
         
         return endpoints;
     }

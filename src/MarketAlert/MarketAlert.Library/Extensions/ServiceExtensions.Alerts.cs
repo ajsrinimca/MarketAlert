@@ -69,6 +69,13 @@ public static partial class ServiceExtensions
         services.AddScoped<IMarubozuAlertService, MarubozuAlertService>();
         services.AddScoped<IThreeWhiteSoldiersDetectionService, ThreeWhiteSoldiersDetectionService>();
         services.AddScoped<IThreeWhiteSoldiersAlertService, ThreeWhiteSoldiersAlertService>();
+        services.AddScoped<IBlockBulkDealRepository, BlockBulkDealRepository>();
+        services.AddScoped<IBlockBulkDealAlertService, BlockBulkDealAlertService>();
+        services.AddScoped<IShortCoveringAlertService, ShortCoveringAlertService>();
+        services.AddScoped<IInsideBarNr7Nr4DetectionService, InsideBarNr7Nr4DetectionService>();
+        services.AddScoped<IInsideBarNr7Nr4AlertService, InsideBarNr7Nr4AlertService>();
+        services.AddScoped<ILongUnwindingRepository, LongUnwindingRepository>();
+        services.AddScoped<ILongUnwindingAlertService, LongUnwindingAlertService>();
 
         return services;
     }

@@ -72,3 +72,23 @@ public class TriangleAlertResponse
     : AlertResponse<TriangleAlertItem>
 {
 }
+
+public sealed class InsideBarNr7Nr4Response
+    : AlertResponse<InsideBarNr7Nr4Result>
+{
+}
+
+public sealed class BlockBulkDealResponse
+    : AlertResponse<BlockBulkDealAlertResult>
+{
+}
+
+public sealed class ShortCoveringResponse
+    : AlertResponse<ShortCoveringAlertResult>
+{
+}
+
+public sealed class LongUnwindingAlertResponse
+    : AlertResponse<LongUnwindingAlertResult>
+{
+}

@@ -44,6 +44,10 @@
   "OutsideBar": {
     "RequiredDailyCandles": 2
   },
+  "InsideBarNr7Nr4": {
+    "RequiredDailyCandles": 7,
+    "LiveMarketSegment": "CASH"
+  },
   "Marubozu": {
     "AverageBodyLookbackCandles": 10,
     "LiveEvaluationCadenceMinutes": 15,
@@ -54,6 +58,25 @@
     "LiveEvaluationCadenceMinutes": 15,
     "RequiredDailyCandles": 13,
     "MaximumShadowToRangeRatio": 0.1
+  },
+  "BlockBulkDeal": {
+    "BlockDealMinimumValueInr": 250000000,
+    "BulkDealThresholdPercent": 0.5,
+    "BlockRowsPrequalifiedBySource": true
+  },
+  "ShortCovering": {
+    "LiveEvaluationCadenceMinutes": 15,
+    "MarketSegment": "FO",
+    "ScPercentFormula": null,
+    "ScPercentThreshold": null,
+    "SupportedGroups": [
+      "Nifty",
+      "Bank Nifty"
+    ]
+  },
+  "LongUnwinding": {
+    "ThresholdPercent": 30.0,
+    "MarketSegment": "FO"
   },
   "LiveMarket": {
     "BaseUrl": "https://dartstock-uatserv.upstox.com/",

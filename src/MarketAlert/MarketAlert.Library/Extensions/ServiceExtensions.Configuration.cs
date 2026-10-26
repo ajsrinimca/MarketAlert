@@ -134,6 +134,15 @@ public static partial class ServiceExtensions
                 "OutsideBar:RequiredDailyCandles must be exactly 2 and fit within MarketData:EodCandleCount.")
             .ValidateOnStart();
 
+        services.AddOptions<InsideBarNr7Nr4Settings>()
+            .Bind(configuration.GetSection("InsideBarNr7Nr4"))
+            .Validate(
+                settings => settings.RequiredDailyCandles == 7 &&
+                            settings.RequiredDailyCandles <= eodCandleCount &&
+                            !string.IsNullOrWhiteSpace(settings.LiveMarketSegment),
+                "InsideBarNr7Nr4 requires seven daily candles within the EOD cache and a configured live market segment.")
+            .ValidateOnStart();
+
         services.AddOptions<MarubozuSettings>()
             .Bind(configuration.GetSection("Marubozu"))
             .Validate(
@@ -155,6 +164,34 @@ public static partial class ServiceExtensions
                     settings.MaximumShadowToRangeRatio == 0.1m &&
                     settings.RequiredDailyCandles <= eodCandleCount,
                 "ThreeWhiteSoldiers requires exactly 13 daily candles, a supported live cadence (15, 30, or 60 minutes), the specified 10% shadow threshold, and sufficient EOD history.")
+            .ValidateOnStart();
+
+        services.AddOptions<BlockBulkDealSettings>()
+            .Bind(configuration.GetSection("BlockBulkDeal"))
+            .Validate(
+                settings => settings.BlockDealMinimumValueInr > 0 &&
+                            settings.BulkDealThresholdPercent >= 0,
+                "BlockBulkDeal requires a positive block value and non-negative bulk percentage threshold.")
+            .ValidateOnStart();
+
+        services.AddOptions<ShortCoveringSettings>()
+            .Bind(configuration.GetSection("ShortCovering"))
+            .Validate(
+                settings => settings.LiveEvaluationCadenceMinutes == 15 &&
+                            !string.IsNullOrWhiteSpace(settings.MarketSegment) &&
+                            settings.SupportedGroups.Count > 0 &&
+                            settings.SupportedGroups.All(group => !string.IsNullOrWhiteSpace(group)) &&
+                            (settings.ScPercentThreshold is null || settings.ScPercentThreshold >= 0) &&
+                            (string.IsNullOrWhiteSpace(settings.ScPercentFormula) == (settings.ScPercentThreshold is null)),
+                "ShortCovering requires a 15-minute live cadence, a market segment, supported groups, and either both or neither SC% formula and threshold.")
+            .ValidateOnStart();
+
+        services.AddOptions<LongUnwindingSettings>()
+            .Bind(configuration.GetSection("LongUnwinding"))
+            .Validate(
+                settings => settings.ThresholdPercent == 30m &&
+                            !string.IsNullOrWhiteSpace(settings.MarketSegment),
+                "LongUnwinding requires the specified 30% threshold and a configured market segment.")
             .ValidateOnStart();
 
         return services;
