@@ -8,6 +8,10 @@ public sealed class RectangleBreakoutResult
 
     public bool IsPatternDetected { get; set; }
 
+    public bool IsConsolidationDetected { get; set; }
+
+    public string? BreakoutDirection { get; set; }
+
     public decimal Top { get; set; }
 
     public decimal Bottom { get; set; }

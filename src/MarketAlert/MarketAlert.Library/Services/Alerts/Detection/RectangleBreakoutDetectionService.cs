@@ -95,15 +95,23 @@ internal sealed class RectangleBreakoutDetectionService
         // ---------------------------------------------------------
 
         result.Pattern = "Rectangle";
-        result.IsPatternDetected =
+        result.IsConsolidationDetected =
             highCount >= 2 &&
             lowCount >= 2 &&
             rangePercentage <= 10m;
 
-        if (!result.IsPatternDetected)
+        if (!result.IsConsolidationDetected)
         {
             return result;
         }
+
+        result.BreakoutDirection = lastCandle.Close > top
+            ? "Up"
+            : lastCandle.Close < bottom
+                ? "Down"
+                : null;
+
+        result.IsPatternDetected = result.BreakoutDirection is not null;
 
         return result;
     }

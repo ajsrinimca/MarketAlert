@@ -178,9 +178,10 @@ public sealed class RectangleBreakoutAlertService(
         foreach (var result in response.Data)
         {
             logger.LogInformation(
-                "Rectangle detected. Ticker: {Ticker}, Top: {Top}, " +
-                "Bottom: {Bottom}, RangePercentage: {RangePercentage}",
+                "Rectangle breakout detected. Ticker: {Ticker}, Direction: {Direction}, " +
+                "Top: {Top}, Bottom: {Bottom}, RangePercentage: {RangePercentage}",
                 result.Ticker,
+                result.BreakoutDirection,
                 result.Top,
                 result.Bottom,
                 result.RangePercentage);
