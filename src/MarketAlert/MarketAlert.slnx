@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="MarketAlert/MarketAlert.csproj" />
   <Project Path="MarketAlert.Library/MarketAlert.Library.csproj" Id="207bef30-8dcc-47c4-a8fc-5bdac8589198" />
+  <Project Path="MarketAlert.Library.Tests/MarketAlert.Library.Tests.csproj" Id="6fee6eec-61a8-4dd1-9127-41cc56a640cb" />
 </Solution>
