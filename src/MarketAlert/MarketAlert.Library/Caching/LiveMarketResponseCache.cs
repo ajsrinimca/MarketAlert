@@ -6,6 +6,10 @@ public interface ILiveMarketResponseCache
         string exchange,
         out LiveMarketResponse response);
 
+    bool TryGetLast(
+        string exchange,
+        out LiveMarketResponse response);
+
     void Set(
         string exchange,
         LiveMarketResponse response,
@@ -61,13 +65,34 @@ public sealed class LiveMarketResponseCache
 
             if (DateTimeOffset.UtcNow >= entry.ExpiryTime)
             {
-                _cache.Remove(key);
-
                 return false;
             }
 
             response = entry.Response;
 
+            return true;
+        }
+    }
+
+    public bool TryGetLast(
+        string exchange,
+        out LiveMarketResponse response)
+    {
+        response = null!;
+        if (string.IsNullOrWhiteSpace(exchange))
+        {
+            return false;
+        }
+
+        var key = exchange.Trim().ToUpperInvariant();
+        lock (_lock)
+        {
+            if (!_cache.TryGetValue(key, out var entry))
+            {
+                return false;
+            }
+
+            response = entry.Response;
             return true;
         }
     }

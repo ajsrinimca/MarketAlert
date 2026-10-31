@@ -124,7 +124,9 @@ public sealed partial class MarketDataService
             // INSUFFICIENT CANDLES
             // -----------------------------------------------------
 
-            if (history.Count < lookbackCandles)
+            var normalizedHistory = DailyCandleWindow.Normalize(history);
+            var minimumHistoryCount = Math.Max(1, lookbackCandles - 1);
+            if (normalizedHistory.Count < minimumHistoryCount)
             {
                 results.Add(
                     CreateSkippedResult(
@@ -139,17 +141,14 @@ public sealed partial class MarketDataService
                     "Reason: {Reason}",
                     exchange,
                     ticker,
-                    history.Count,
-                    lookbackCandles,
+                    normalizedHistory.Count,
+                    minimumHistoryCount,
                     MarketDataSkipReason.InsufficientCandles);
 
                 continue;
             }
 
-            historicalData[ticker] =
-                TakeLastCandles(
-                    history,
-                    lookbackCandles);
+            historicalData[ticker] = normalizedHistory;
         }
 
         // ---------------------------------------------------------
@@ -175,10 +174,39 @@ public sealed partial class MarketDataService
         // LIVE API
         // ---------------------------------------------------------
 
-        var liveResponse =
-            await liveMarketDataService.GetLiveQuotesAsync(
+        LiveMarketResponse liveResponse;
+        try
+        {
+            liveResponse = await liveMarketDataService.GetLiveQuotesAsync(
                 exchange,
                 cancellationToken);
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Live market data failed with no cached live response. Falling back to EOD candle windows. Exchange: {Exchange}, FallbackSource: EOD",
+                exchange);
+
+            foreach (var (ticker, candles) in historicalData)
+            {
+                results.Add(candles.Count < lookbackCandles
+                    ? CreateSkippedResult(ticker, MarketDataSkipReason.InsufficientCandles)
+                    : new MarketDataResult
+                    {
+                        Ticker = ticker,
+                        Candles = TakeLastCandles(candles, lookbackCandles),
+                        SkipReason = MarketDataSkipReason.None
+                    });
+            }
+
+            return results;
+        }
 
         logger.LogTrace(
             "Live quotes received for market data processing. " +
@@ -202,8 +230,39 @@ public sealed partial class MarketDataService
                     group => group.First(),
                     StringComparer.OrdinalIgnoreCase);
 
-        var liveDate =
-            DateTime.Today;
+        var tradingDate = liveResponse.LastUpdatedTime.Date;
+
+        // A stale or missing broker update means there is no current-session
+        // candle yet. Keep each ticker's last completed EOD window available
+        // so live requests retain the previous session's result.
+        if (liveResponse.LastUpdatedTime == default)
+        {
+            foreach (var (ticker, candles) in historicalData)
+            {
+                if (candles.Count < lookbackCandles)
+                {
+                    results.Add(
+                        CreateSkippedResult(
+                            ticker,
+                            MarketDataSkipReason.InsufficientCandles));
+                    continue;
+                }
+
+                results.Add(new MarketDataResult
+                {
+                    Ticker = ticker,
+                    Candles = TakeLastCandles(candles, lookbackCandles),
+                    SkipReason = MarketDataSkipReason.None
+                });
+            }
+
+            logger.LogWarning(
+                "Broker live data has no valid update timestamp. Returning the previous EOD candle windows. Exchange: {Exchange}, BrokerLastUpdatedTime: {LastUpdatedTime}",
+                exchange,
+                liveResponse.LastUpdatedTime);
+
+            return results;
+        }
 
         // ---------------------------------------------------------
         // MERGE EOD + LIVE
@@ -215,6 +274,62 @@ public sealed partial class MarketDataService
                     ticker,
                     out var candles))
             {
+                continue;
+            }
+
+            var eodCandles = DailyCandleWindow.Normalize(candles);
+            var latestTickerEodDate = eodCandles[^1].Date.Date;
+            if (tradingDate < latestTickerEodDate)
+            {
+                if (eodCandles.Count < lookbackCandles)
+                {
+                    results.Add(CreateSkippedResult(ticker, MarketDataSkipReason.InsufficientCandles));
+                    continue;
+                }
+
+                results.Add(new MarketDataResult
+                {
+                    Ticker = ticker,
+                    Candles = TakeLastCandles(eodCandles, lookbackCandles),
+                    SkipReason = MarketDataSkipReason.None
+                });
+
+                logger.LogWarning(
+                    "Broker data has not advanced to this ticker's latest EOD session. Returning its latest EOD window. Exchange: {Exchange}, Ticker: {Ticker}, BrokerTradingDate: {TradingDate}, LatestEodDate: {LatestEodDate}",
+                    exchange,
+                    ticker,
+                    tradingDate,
+                    latestTickerEodDate);
+                continue;
+            }
+
+            var currentEodCandle = eodCandles.LastOrDefault(
+                candle => candle.Date.Date == tradingDate);
+            if (currentEodCandle is not null)
+            {
+                var eodWindow = eodCandles
+                    .Where(candle => candle.Date.Date <= tradingDate)
+                    .TakeLast(lookbackCandles)
+                    .ToList();
+
+                if (eodWindow.Count < lookbackCandles)
+                {
+                    results.Add(CreateSkippedResult(ticker, MarketDataSkipReason.InsufficientCandles));
+                    continue;
+                }
+
+                results.Add(new MarketDataResult
+                {
+                    Ticker = ticker,
+                    Candles = eodWindow,
+                    SkipReason = MarketDataSkipReason.None
+                });
+
+                logger.LogTrace(
+                    "EOD candle for the broker trading date is already cached. Skipping the live candle and using EOD data. Exchange: {Exchange}, Ticker: {Ticker}, TradingDate: {TradingDate}",
+                    exchange,
+                    ticker,
+                    tradingDate);
                 continue;
             }
 
@@ -238,6 +353,23 @@ public sealed partial class MarketDataService
                     exchange,
                     ticker,
                     MarketDataSkipReason.LiveQuoteMissing);
+
+                continue;
+            }
+
+            if (quote.Volume <= 0)
+            {
+                results.Add(
+                    CreateSkippedResult(
+                        ticker,
+                        MarketDataSkipReason.NoTradeToday));
+
+                logger.LogTrace(
+                    "Market data symbol skipped because it has not traded on the broker trading date. Exchange: {Exchange}, Ticker: {Ticker}, TradingDate: {TradingDate}, Volume: {Volume}",
+                    exchange,
+                    ticker,
+                    tradingDate,
+                    quote.Volume);
 
                 continue;
             }
@@ -282,7 +414,7 @@ public sealed partial class MarketDataService
                     // Keeping the existing behavior for now.
                     Token = candles[0].Token,
 
-                    Date = liveDate,
+                    Date = tradingDate,
                     Open = quote.Open,
                     High = quote.High,
                     Low = quote.Low,
@@ -291,46 +423,36 @@ public sealed partial class MarketDataService
                 };
 
             // -----------------------------------------------------
-            // REPLACE TODAY OR APPEND
+            // BUILD PREVIOUS N-1 SESSIONS PLUS THE CURRENT SESSION
             // -----------------------------------------------------
 
-            var sameDateIndex =
-                candles.FindIndex(
-                    x => x.Date.Date == liveDate);
+            var candleWindow = DailyCandleWindow.BuildWithCurrentSession(
+                candles,
+                liveCandle,
+                lookbackCandles);
 
-            if (sameDateIndex >= 0)
+            if (candleWindow is null)
             {
-                candles[sameDateIndex] =
-                    liveCandle;
+                results.Add(
+                    CreateSkippedResult(
+                        ticker,
+                        MarketDataSkipReason.InsufficientCandles));
 
                 logger.LogTrace(
-                    "Today's EOD candle replaced with live candle. " +
-                    "Exchange: {Exchange}, Ticker: {Ticker}, " +
-                    "Date: {Date:yyyy-MM-dd}",
+                    "Market data symbol skipped because fewer than {RequiredPreviousCandles} unique prior trading days exist before the broker trading date. Exchange: {Exchange}, Ticker: {Ticker}, TradingDate: {TradingDate}",
+                    Math.Max(0, lookbackCandles - 1),
                     exchange,
                     ticker,
-                    liveDate);
-            }
-            else
-            {
-                candles.Add(
-                    liveCandle);
-            }
+                    tradingDate);
 
-            // -----------------------------------------------------
-            // MAINTAIN LOOKBACK
-            // -----------------------------------------------------
-
-            candles =
-                TakeLastCandles(
-                    candles,
-                    lookbackCandles);
+                continue;
+            }
 
             results.Add(
                 new MarketDataResult
                 {
                     Ticker = ticker,
-                    Candles = candles,
+                    Candles = candleWindow,
                     IsLive = true,
                     SkipReason = MarketDataSkipReason.None
                 });

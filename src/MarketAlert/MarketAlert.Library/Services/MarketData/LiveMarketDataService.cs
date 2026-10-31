@@ -223,10 +223,20 @@ public sealed class LiveMarketDataService(
         {
             stopwatch.Stop();
 
-            logger.LogDebug(
+            if (liveMarketResponseCache.TryGetLast(exchange, out var staleResponse))
+            {
+                staleResponse.IsStaleFallback = true;
+                logger.LogWarning(
+                    ex,
+                    "Live market API failed. Using the last cached live response as fallback. Exchange: {Exchange}, BrokerLastUpdatedTime: {LastUpdatedTime}",
+                    exchange,
+                    staleResponse.LastUpdatedTime);
+                return staleResponse;
+            }
+
+            logger.LogWarning(
                 ex,
-                "Live market API request failed. " +
-                "Exchange: {Exchange}, ResponseTime: {ResponseTimeMs} ms",
+                "Live market API request failed and no previous live response is cached. Exchange: {Exchange}, ResponseTime: {ResponseTimeMs} ms",
                 exchange,
                 stopwatch.ElapsedMilliseconds);
 

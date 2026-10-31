@@ -36,6 +36,9 @@ public static partial class ServiceExtensions
         services.AddHostedService<
             EodHistoryCacheWarmupService>();
 
+        services.AddHostedService<
+            EodHistoryAfterCloseRefreshService>();
+
         return services;
     }
 }

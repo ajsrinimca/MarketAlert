@@ -131,11 +131,13 @@ public sealed partial class MarketDataService
                 continue;
             }
 
+            var normalizedHistory = DailyCandleWindow.Normalize(history);
+
             // -----------------------------------------------------
             // INSUFFICIENT CANDLES
             // -----------------------------------------------------
 
-            if (history.Count < lookbackCandles)
+            if (normalizedHistory.Count < lookbackCandles)
             {
                 results.Add(
                     CreateSkippedResult(
@@ -150,7 +152,7 @@ public sealed partial class MarketDataService
                     "Reason: {Reason}",
                     exchange,
                     ticker,
-                    history.Count,
+                    normalizedHistory.Count,
                     lookbackCandles,
                     MarketDataSkipReason.InsufficientCandles);
 
@@ -163,7 +165,7 @@ public sealed partial class MarketDataService
 
             var candles =
                 TakeLastCandles(
-                    history,
+                    normalizedHistory,
                     lookbackCandles);
 
             results.Add(

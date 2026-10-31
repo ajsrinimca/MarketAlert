@@ -12,6 +12,8 @@ public interface IBlockBulkDealAlertService
 public sealed class BlockBulkDealAlertService(
     IBlockBulkDealRepository repository,
     IMarketSymbolService marketSymbolService,
+    IMarketStatusService marketStatusService,
+    ILiveMarketDataService liveMarketDataService,
     IOptions<BlockBulkDealSettings> settings,
     ILogger<BlockBulkDealAlertService> logger) : IBlockBulkDealAlertService
 {
@@ -40,9 +42,48 @@ public sealed class BlockBulkDealAlertService(
                 .ToList();
         }
 
-        var dealDate = includeLive
-            ? DateOnly.FromDateTime(DateTime.Now)
-            : await repository.GetLatestDealDateAsync(exchange, cancellationToken);
+        var latestStoredDealDate = await repository.GetLatestDealDateAsync(exchange, cancellationToken);
+        var dealDate = latestStoredDealDate;
+        var isLiveDate = false;
+
+        if (includeLive)
+        {
+            try
+            {
+                var marketStatus = await marketStatusService.GetMarketStatusAsync(
+                    exchange, "CASH", cancellationToken);
+                if (marketStatus.IsMarketOpen)
+                {
+                    var brokerResponse = await liveMarketDataService.GetLiveQuotesAsync(exchange, cancellationToken);
+                    if (brokerResponse.LastUpdatedTime != default && !brokerResponse.IsStaleFallback)
+                    {
+                        dealDate = DateOnly.FromDateTime(brokerResponse.LastUpdatedTime);
+                        isLiveDate = true;
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Could not determine the broker deal date. Using the latest stored deal session. Exchange: {Exchange}, FallbackSource: Repository, DealDate: {DealDate}",
+                    exchange,
+                    latestStoredDealDate);
+            }
+
+            if (!isLiveDate)
+            {
+                dealDate = latestStoredDealDate;
+                logger.LogInformation(
+                    "Returning the latest stored Block/Bulk deal session outside live market data. Exchange: {Exchange}, FallbackSource: Repository, DealDate: {DealDate}",
+                    exchange,
+                    dealDate);
+            }
+        }
 
         var response = new BlockBulkDealResponse
         {
@@ -57,12 +98,25 @@ public sealed class BlockBulkDealAlertService(
         }
 
         var deals = await repository.GetDealsAsync(exchange, dealDate.Value, tickers, cancellationToken);
+        if (isLiveDate && deals.Count == 0 &&
+            latestStoredDealDate is { } storedDate && storedDate < dealDate.Value)
+        {
+            logger.LogInformation(
+                "No deals are stored for the broker trading date yet. Returning the previous stored session. Exchange: {Exchange}, BrokerTradingDate: {BrokerTradingDate}, FallbackSource: Repository, FallbackDealDate: {FallbackDealDate}",
+                exchange,
+                dealDate.Value,
+                storedDate);
+            dealDate = storedDate;
+            isLiveDate = false;
+            deals = await repository.GetDealsAsync(exchange, dealDate.Value, tickers, cancellationToken);
+        }
+
         var listedShares = await repository.GetListedSharesAsync(
             exchange,
             deals.Select(deal => deal.Ticker).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             cancellationToken);
 
-        var evaluationMode = includeLive ? "Live" : "EOD";
+        var evaluationMode = isLiveDate ? "Live" : "EOD";
         var results = new List<BlockBulkDealAlertResult>();
 
         foreach (var deal in deals.Where(deal => deal.DealCategory.Equals("BLOCK", StringComparison.OrdinalIgnoreCase)))
@@ -80,7 +134,7 @@ public sealed class BlockBulkDealAlertService(
                 AlertType = "BlockDeal",
                 IsAlertDetected = true,
                 EvaluationMode = evaluationMode,
-                IsProvisional = includeLive,
+                IsProvisional = isLiveDate,
                 DealDate = dealDate.Value.ToString("yyyy-MM-dd"),
                 ClientName = deal.ClientName,
                 Quantity = deal.Quantity,
@@ -117,7 +171,7 @@ public sealed class BlockBulkDealAlertService(
                 AlertType = "BulkDeal",
                 IsAlertDetected = true,
                 EvaluationMode = evaluationMode,
-                IsProvisional = includeLive,
+                IsProvisional = isLiveDate,
                 DealDate = dealDate.Value.ToString("yyyy-MM-dd"),
                 ClientName = clientDeals.Key.ClientName,
                 Quantity = quantity,

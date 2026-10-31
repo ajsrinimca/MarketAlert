@@ -8,5 +8,6 @@ public enum MarketDataSkipReason
     NoHistory = 3,
     InsufficientCandles = 4,
     LiveQuoteMissing = 5,
-    InvalidLiveQuote = 6
+    InvalidLiveQuote = 6,
+    NoTradeToday = 7
 }

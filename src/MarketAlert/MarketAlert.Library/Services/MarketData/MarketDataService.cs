@@ -200,11 +200,23 @@ public sealed partial class MarketDataService(
             exchange,
             segment);
 
-        var marketStatus =
-            await marketStatusService.GetMarketStatusAsync(
+        Models.MarketStatus.MarketStatus marketStatus;
+        try
+        {
+            marketStatus = await marketStatusService.GetMarketStatusAsync(
                 exchange,
                 segment,
                 cancellationToken);
+        }
+        catch (InvalidOperationException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Market timing is unavailable for live data. Falling back to the latest EOD candle window. Exchange: {Exchange}, FallbackSource: EOD",
+                exchange);
+
+            return GetClosedMarketData(exchange, requestedTickers, lookbackCandles);
+        }
 
         logger.LogTrace(
             "Market status retrieved. " +

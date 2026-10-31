@@ -10,9 +10,7 @@ public interface IInsideBarNr7Nr4AlertService
 }
 
 public sealed class InsideBarNr7Nr4AlertService(
-    IEodHistoryCache eodHistoryCache,
-    ILiveMarketDataService liveMarketDataService,
-    IMarketStatusService marketStatusService,
+    IMarketDataService marketDataService,
     IInsideBarNr7Nr4DetectionService detectionService,
     IOptions<InsideBarNr7Nr4Settings> settings,
     MarketAlertOptions marketAlertOptions,
@@ -50,12 +48,26 @@ public sealed class InsideBarNr7Nr4AlertService(
             includeLive ? "Live" : "EOD",
             tickers.Count);
 
-        var results = includeLive
-            ? await EvaluateLiveAsync(exchange, tickers, cancellationToken)
-            : EvaluateEod(exchange, tickers);
+        var marketData = await marketDataService.GetMarketDataAsync(
+            exchange,
+            tickers,
+            includeLive,
+            _settings.RequiredDailyCandles,
+            cancellationToken);
 
-        response.Data = results;
-        var latestDate = results
+        response.Data = marketData
+            .Select(item => item.IsSkipped
+                ? CreateSkipped(item, includeLive)
+                : detectionService.Detect(
+                    item.Ticker,
+                    item.Candles,
+                    item.IsLive,
+                    includeLive && !item.IsLive
+                        ? "Live data is unavailable; the latest EOD session result was returned."
+                        : null))
+            .ToList();
+
+        var latestDate = response.Data
             .Where(result => DateOnly.TryParse(result.BarDate, out _))
             .Select(result => DateOnly.Parse(result.BarDate!))
             .DefaultIfEmpty()
@@ -66,13 +78,13 @@ public sealed class InsideBarNr7Nr4AlertService(
         }
 
         stopwatch.Stop();
-        var processed = results.Count(result => result.EvaluationStatus == "Evaluated");
+        var processed = response.Data.Count(result => result.EvaluationStatus == "Evaluated");
         response.Summary = new AlertSummary
         {
             Requested = tickers.Count,
             Processed = processed,
-            Detected = results.Count(result => result.IsPatternDetected),
-            Skipped = results.Count - processed,
+            Detected = response.Data.Count(result => result.IsPatternDetected),
+            Skipped = response.Data.Count - processed,
             ElapsedMs = stopwatch.ElapsedMilliseconds
         };
 
@@ -89,127 +101,36 @@ public sealed class InsideBarNr7Nr4AlertService(
         return response;
     }
 
-    private List<InsideBarNr7Nr4Result> EvaluateEod(
-        string exchange,
-        IReadOnlyList<string> tickers)
+    private static InsideBarNr7Nr4Result CreateSkipped(
+        MarketDataResult item,
+        bool includeLive)
     {
-        if (!eodHistoryCache.IsReady)
+        var (status, message) = item.SkipReason switch
         {
-            return tickers
-                .Select(ticker => CreateUnavailable(ticker, false, "EOD history cache is not ready."))
-                .ToList();
-        }
+            MarketDataSkipReason.NoTradeToday =>
+                ("no_trade_today", "Ticker has not traded on the broker trading date."),
+            MarketDataSkipReason.InsufficientCandles =>
+                ("insufficient_history", "Not enough unique daily candles are available."),
+            MarketDataSkipReason.LiveQuoteMissing =>
+                ("data_unavailable", "Live daily OHLC is unavailable for this ticker."),
+            MarketDataSkipReason.InvalidLiveQuote =>
+                ("data_unavailable", "Live daily OHLC is invalid for this ticker."),
+            _ => ("data_unavailable", $"Market data was skipped: {item.SkipReason}.")
+        };
 
-        var histories = eodHistoryCache.GetHistory(exchange);
-        return tickers
-            .Select(ticker =>
-            {
-                if (!histories.TryGetValue(ticker, out var candles) || candles.Count == 0)
-                {
-                    return detectionService.Detect(ticker, Array.Empty<MarketCandle>(), false);
-                }
-
-                return detectionService.Detect(
-                    ticker,
-                    candles.OrderBy(candle => candle.Date).TakeLast(_settings.RequiredDailyCandles).ToList(),
-                    false);
-            })
-            .ToList();
+        return new InsideBarNr7Nr4Result
+        {
+            Ticker = item.Ticker,
+            EvaluationMode = includeLive ? "Live" : "EOD",
+            IsProvisional = includeLive,
+            EvaluationStatus = status,
+            EvaluationMessage = message
+        };
     }
 
-    private async Task<List<InsideBarNr7Nr4Result>> EvaluateLiveAsync(
-        string exchange,
-        IReadOnlyList<string> tickers,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var marketStatus = await marketStatusService.GetMarketStatusAsync(
-                exchange,
-                _settings.LiveMarketSegment,
-                cancellationToken);
-            if (!marketStatus.IsMarketOpen)
-            {
-                logger.LogWarning(
-                    "Inside Bar/NR Live evaluation skipped because the market is not open. Exchange: {Exchange}, Segment: {Segment}, Status: {Status}",
-                    exchange,
-                    _settings.LiveMarketSegment,
-                    marketStatus.Status);
-                return tickers
-                    .Select(ticker => CreateUnavailable(ticker, true, "Market is not OPEN; live daily observations were not evaluated."))
-                    .ToList();
-            }
-        }
-        catch (InvalidOperationException exception)
-        {
-            logger.LogWarning(
-                exception,
-                "Inside Bar/NR Live evaluation skipped because market timing is unavailable. Exchange: {Exchange}, Segment: {Segment}",
-                exchange,
-                _settings.LiveMarketSegment);
-            return tickers
-                .Select(ticker => CreateUnavailable(ticker, true, "Market timing is unavailable; live daily observations were not evaluated."))
-                .ToList();
-        }
-
-        if (!eodHistoryCache.IsReady)
-        {
-            return tickers
-                .Select(ticker => CreateUnavailable(ticker, true, "EOD history cache is not ready for prior daily candles."))
-                .ToList();
-        }
-
-        var liveResponse = await liveMarketDataService.GetLiveQuotesAsync(exchange, cancellationToken);
-        var quotes = liveResponse.Quotes
-            .Where(quote => !string.IsNullOrWhiteSpace(quote.Ticker))
-            .GroupBy(quote => quote.Ticker.Trim(), StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
-
-        var histories = eodHistoryCache.GetHistory(exchange);
-        var today = DateTime.Today;
-        var results = new List<InsideBarNr7Nr4Result>(tickers.Count);
-
-        foreach (var currentTicker in tickers)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!histories.TryGetValue(currentTicker, out var history) || history.Count == 0)
-            {
-                results.Add(detectionService.Detect(
-                    currentTicker,
-                    Array.Empty<MarketCandle>(),
-                    true,
-                    "No prior completed daily history is available."));
-                continue;
-            }
-
-            if (!quotes.TryGetValue(currentTicker, out var quote))
-            {
-                results.Add(CreateUnavailable(currentTicker, true, "Live daily OHLC is unavailable for this ticker."));
-                continue;
-            }
-
-            var priorCandles = history
-                .Where(candle => candle.Date.Date < today)
-                .OrderBy(candle => candle.Date)
-                .TakeLast(_settings.RequiredDailyCandles - 1)
-                .ToList();
-            var currentCandle = new MarketCandle
-            {
-                Date = today,
-                Open = quote.Open,
-                High = quote.High,
-                Low = quote.Low,
-                Close = quote.LastPrice,
-                Volume = quote.Volume
-            };
-            priorCandles.Add(currentCandle);
-            results.Add(detectionService.Detect(currentTicker, priorCandles, true));
-        }
-
-        return results;
-    }
-
-    private static List<string> ResolveTickers(string? ticker, IReadOnlyList<string> configuredTickers)
+    private static List<string> ResolveTickers(
+        string? ticker,
+        IReadOnlyList<string> configuredTickers)
     {
         if (string.IsNullOrWhiteSpace(ticker))
         {
@@ -228,16 +149,4 @@ public sealed class InsideBarNr7Nr4AlertService(
 
         return [normalizedTicker];
     }
-
-    private static InsideBarNr7Nr4Result CreateUnavailable(
-        string ticker,
-        bool isProvisional,
-        string message) => new()
-        {
-            Ticker = ticker,
-            EvaluationMode = isProvisional ? "Live" : "EOD",
-            IsProvisional = isProvisional,
-            EvaluationStatus = "data_unavailable",
-            EvaluationMessage = message
-        };
 }

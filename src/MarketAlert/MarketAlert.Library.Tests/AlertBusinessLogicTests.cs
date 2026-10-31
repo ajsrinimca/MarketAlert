@@ -1,9 +1,13 @@
 using MarketAlert.Library.Configuration;
+using MarketAlert.Library.Caching;
 using MarketAlert.Library.Models.Alerts;
 using MarketAlert.Library.Models.MarketData;
+using MarketAlert.Library.Models.MarketStatus;
 using MarketAlert.Library.Repositories;
 using MarketAlert.Library.Services.Alerts.Detection;
 using MarketAlert.Library.Services.Alerts.Orchestration;
+using MarketAlert.Library.Services.MarketData;
+using MarketAlert.Library.Services.MarketStatus;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -185,6 +189,8 @@ public sealed class AlertBusinessLogicTests
         var service = new BlockBulkDealAlertService(
             repository,
             marketSymbolService: null!,
+            marketStatusService: null!,
+            liveMarketDataService: null!,
             Options.Create(settings),
             NullLogger<BlockBulkDealAlertService>.Instance);
 
@@ -193,6 +199,63 @@ public sealed class AlertBusinessLogicTests
         Assert.Equal(2, response.Data.Count);
         Assert.Contains(response.Data, item => item.AlertType == "BlockDeal" && item.DealValue == 250_000_000m);
         Assert.Contains(response.Data, item => item.AlertType == "BulkDeal" && item.BulkPercent == 0.51m);
+    }
+
+    [Fact]
+    public async Task BlockBulkDeal_LiveRequestUsesBrokerTradingDate()
+    {
+        var brokerDate = new DateOnly(2026, 10, 28);
+        var repository = new FakeBlockBulkDealRepository(
+            brokerDate, [], new Dictionary<string, decimal>());
+        var service = new BlockBulkDealAlertService(
+            repository,
+            marketSymbolService: null!,
+            new OpenMarketStatusService(),
+            new FixedLiveMarketDataService(new LiveMarketResponse
+            {
+                LastUpdatedTime = brokerDate.ToDateTime(new TimeOnly(14, 30))
+            }),
+            Options.Create(new BlockBulkDealSettings()),
+            NullLogger<BlockBulkDealAlertService>.Instance);
+
+        await service.GetAlertsAsync("NSE", null, includeLive: true);
+
+        Assert.Equal(brokerDate, repository.RequestedDealDate);
+    }
+
+    [Fact]
+    public async Task BlockBulkDeal_FallsBackToPreviousStoredDateWhenBrokerDateHasNoDealsYet()
+    {
+        var storedDate = new DateOnly(2026, 10, 27);
+        var repository = new FakeBlockBulkDealRepository(
+            storedDate,
+            [new BlockBulkDealRow
+            {
+                Ticker = "ABC", DealCategory = "BLOCK", ClientName = "Fund A",
+                Quantity = 250_000, TradePrice = 1_000
+            }],
+            new Dictionary<string, decimal>());
+        var service = new BlockBulkDealAlertService(
+            repository,
+            marketSymbolService: null!,
+            new OpenMarketStatusService(),
+            new FixedLiveMarketDataService(new LiveMarketResponse
+            {
+                LastUpdatedTime = new DateOnly(2026, 10, 28).ToDateTime(new TimeOnly(14, 30))
+            }),
+            Options.Create(new BlockBulkDealSettings
+            {
+                BlockDealMinimumValueInr = 250_000_000m,
+                BlockRowsPrequalifiedBySource = true
+            }),
+            NullLogger<BlockBulkDealAlertService>.Instance);
+
+        var response = await service.GetAlertsAsync("NSE", null, includeLive: true);
+
+        Assert.Equal(storedDate.ToString("yyyy-MM-dd"), response.Ltd);
+        Assert.Contains(response.Data, result => result.AlertType == "BlockDeal");
+        Assert.All(response.Data, result => Assert.False(result.IsProvisional));
+        Assert.Equal(storedDate, repository.RequestedDealDate);
     }
 
     [Fact]
@@ -374,6 +437,159 @@ public sealed class AlertBusinessLogicTests
     }
 
     [Fact]
+    public async Task MarketData_UsesBrokerDateAndPreviousNMinusOneUniqueSessions()
+    {
+        var today = DateTime.Today;
+        var history = new List<MarketCandle>
+        {
+            CandleOn(today.AddDays(-3)),
+            CandleOn(today.AddDays(-2)),
+            CandleOn(today.AddDays(-1))
+        };
+        var service = CreateMarketDataService(
+            history,
+            new LiveMarketResponse
+            {
+                LastUpdatedTime = today.AddHours(11),
+                Quotes = [new LiveQuote { Ticker = "ABC", Open = 100, High = 105, Low = 99, LastPrice = 103, Volume = 1 }]
+            });
+
+        var result = Assert.Single(await service.GetMarketDataAsync("NSE", ["ABC"], true, 3));
+
+        Assert.False(result.IsSkipped);
+        Assert.True(result.IsLive);
+        Assert.Equal(3, result.Candles.Count);
+        Assert.Equal(today, result.Candles[^1].Date.Date);
+        Assert.Equal(103, result.Candles[^1].Close);
+        Assert.Equal(result.Candles.Count, result.Candles.Select(candle => candle.Date.Date).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task MarketData_UsesPreviousSessionWhenBrokerTimestampIsStale()
+    {
+        var today = DateTime.Today;
+        var history = new List<MarketCandle>
+        {
+            CandleOn(today.AddDays(-4)),
+            CandleOn(today.AddDays(-3)),
+            CandleOn(today.AddDays(-2)),
+            CandleOn(today.AddDays(-1))
+        };
+        var service = CreateMarketDataService(
+            history,
+            new LiveMarketResponse { LastUpdatedTime = today.AddDays(-1).AddHours(15) });
+
+        var result = Assert.Single(await service.GetMarketDataAsync("NSE", ["ABC"], true, 3));
+
+        Assert.False(result.IsSkipped);
+        Assert.False(result.IsLive);
+        Assert.Equal(3, result.Candles.Count);
+        Assert.Equal(today.AddDays(-1), result.Candles[^1].Date.Date);
+    }
+
+    [Fact]
+    public async Task MarketData_DeduplicatesDailyHistoryBeforeBuildingCurrentWindow()
+    {
+        var today = DateTime.Today;
+        var duplicate = CandleOn(today.AddDays(-2));
+        duplicate.Close = 101;
+        var history = new List<MarketCandle>
+        {
+            CandleOn(today.AddDays(-3)),
+            CandleOn(today.AddDays(-2)),
+            duplicate,
+            CandleOn(today.AddDays(-1))
+        };
+        var service = CreateMarketDataService(
+            history,
+            new LiveMarketResponse
+            {
+                LastUpdatedTime = today.AddHours(12),
+                Quotes = [new LiveQuote { Ticker = "ABC", Open = 100, High = 105, Low = 99, LastPrice = 103, Volume = 10 }]
+            });
+
+        var result = Assert.Single(await service.GetMarketDataAsync("NSE", ["ABC"], true, 3));
+
+        Assert.Equal(3, result.Candles.Count);
+        Assert.Equal(result.Candles.Count, result.Candles.Select(candle => candle.Date.Date).Distinct().Count());
+        Assert.Equal(today.AddDays(-2), result.Candles[0].Date.Date);
+        Assert.Equal(today, result.Candles[^1].Date.Date);
+    }
+
+    [Fact]
+    public async Task MarketData_SkipsTickerWithNoTradesOnBrokerTradingDate()
+    {
+        var today = DateTime.Today;
+        var service = CreateMarketDataService(
+            [CandleOn(today.AddDays(-3)), CandleOn(today.AddDays(-2)), CandleOn(today.AddDays(-1))],
+            new LiveMarketResponse
+            {
+                LastUpdatedTime = today.AddHours(12),
+                Quotes = [new LiveQuote { Ticker = "ABC", Open = 100, High = 100, Low = 100, LastPrice = 100, Volume = 0 }]
+            });
+
+        var result = Assert.Single(await service.GetMarketDataAsync("NSE", ["ABC"], true, 3));
+
+        Assert.True(result.IsSkipped);
+        Assert.Equal(MarketDataSkipReason.NoTradeToday, result.SkipReason);
+    }
+
+    [Fact]
+    public async Task InsideBarLive_UsesPreviousSessionIfBrokerDateIsStale()
+    {
+        var today = DateTime.Today;
+        var history = new Dictionary<string, List<MarketCandle>>
+        {
+            ["ABC"] = Candles(7)
+                .Select((candle, index) =>
+                {
+                    candle.Date = today.AddDays(index - 7);
+                    return candle;
+                })
+                .ToList()
+        };
+        var service = CreateInsideBarService(
+            history["ABC"],
+            new LiveMarketResponse { LastUpdatedTime = today.AddDays(-1) });
+
+        var response = await service.GetAlertsAsync("NSE", "ABC", true);
+
+        var result = Assert.Single(response.Data);
+        Assert.Equal("EOD", result.EvaluationMode);
+        Assert.False(result.IsProvisional);
+        Assert.Contains("previous session", result.EvaluationMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task InsideBarLive_SkipsTickerWithZeroVolumeToday()
+    {
+        var today = DateTime.Today;
+        var history = new Dictionary<string, List<MarketCandle>>
+        {
+            ["ABC"] = Candles(7)
+                .Select((candle, index) =>
+                {
+                    candle.Date = today.AddDays(index - 7);
+                    return candle;
+                })
+                .ToList()
+        };
+        var service = CreateInsideBarService(
+            history["ABC"],
+            new LiveMarketResponse
+            {
+                LastUpdatedTime = today.AddHours(12),
+                Quotes = [new LiveQuote { Ticker = "ABC", Open = 100, High = 102, Low = 98, LastPrice = 100, Volume = 0 }]
+            });
+
+        var response = await service.GetAlertsAsync("NSE", "ABC", true);
+
+        var result = Assert.Single(response.Data);
+        Assert.Equal("no_trade_today", result.EvaluationStatus);
+        Assert.False(result.IsPatternDetected);
+    }
+
+    [Fact]
     public void Marubozu_RequiresLongBodyAndSmallUpperAndLowerShadows()
     {
         var candles = Enumerable.Range(0, 10)
@@ -444,6 +660,45 @@ public sealed class AlertBusinessLogicTests
         })
         .ToList();
 
+    private static MarketCandle CandleOn(DateTime date) => new()
+    {
+        Date = date.Date,
+        Open = 100,
+        High = 102,
+        Low = 98,
+        Close = 100,
+        Volume = 1
+    };
+
+    private static MarketDataService CreateMarketDataService(
+        List<MarketCandle> history,
+        LiveMarketResponse liveResponse)
+    {
+        var historyCache = new EodHistoryCache();
+        historyCache.SetHistory("NSE", new Dictionary<string, List<MarketCandle>>
+        {
+            ["ABC"] = history
+        });
+        historyCache.MarkReady();
+
+        return new MarketDataService(
+            new OpenMarketStatusService(),
+            historyCache,
+            new FixedLiveMarketDataService(liveResponse),
+            Options.Create(TriangleSettings()),
+            new MarketAlertOptions(),
+            NullLogger<MarketDataService>.Instance);
+    }
+
+    private static InsideBarNr7Nr4AlertService CreateInsideBarService(
+        List<MarketCandle> history,
+        LiveMarketResponse liveResponse) => new(
+        CreateMarketDataService(history, liveResponse),
+        new InsideBarNr7Nr4DetectionService(NullLogger<InsideBarNr7Nr4DetectionService>.Instance),
+        Options.Create(new InsideBarNr7Nr4Settings()),
+        new MarketAlertOptions { NseSymbols = ["ABC"] },
+        NullLogger<InsideBarNr7Nr4AlertService>.Instance);
+
     private static SwingPoint Swing(int index, decimal price) => new()
     {
         Index = index,
@@ -475,11 +730,16 @@ public sealed class AlertBusinessLogicTests
         List<BlockBulkDealRow> deals,
         Dictionary<string, decimal> shares) : IBlockBulkDealRepository
     {
+        public DateOnly? RequestedDealDate { get; private set; }
+
         public Task<DateOnly?> GetLatestDealDateAsync(string exchange, CancellationToken cancellationToken = default) =>
             Task.FromResult(date);
 
-        public Task<List<BlockBulkDealRow>> GetDealsAsync(string exchange, DateOnly dealDate, IReadOnlyList<string>? tickers, CancellationToken cancellationToken = default) =>
-            Task.FromResult(deals);
+        public Task<List<BlockBulkDealRow>> GetDealsAsync(string exchange, DateOnly dealDate, IReadOnlyList<string>? tickers, CancellationToken cancellationToken = default)
+        {
+            RequestedDealDate = dealDate;
+            return Task.FromResult(dealDate == date ? deals : []);
+        }
 
         public Task<Dictionary<string, decimal>> GetListedSharesAsync(string exchange, IReadOnlyList<string> tickers, CancellationToken cancellationToken = default) =>
             Task.FromResult(shares);
@@ -489,5 +749,17 @@ public sealed class AlertBusinessLogicTests
     {
         public Task<List<string>> GetFnoUnderlyingTickersAsync(string exchange, CancellationToken cancellationToken = default) =>
             Task.FromResult(tickers);
+    }
+
+    private sealed class OpenMarketStatusService : IMarketStatusService
+    {
+        public Task<MarketStatus> GetMarketStatusAsync(string exchange, string segment, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new MarketStatus { Exchange = exchange, Segment = segment, Status = "OPEN", IsMarketOpen = true });
+    }
+
+    private sealed class FixedLiveMarketDataService(LiveMarketResponse response) : ILiveMarketDataService
+    {
+        public Task<LiveMarketResponse> GetLiveQuotesAsync(string exchange, CancellationToken cancellationToken = default) =>
+            Task.FromResult(response);
     }
 }
