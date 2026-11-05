@@ -22,13 +22,13 @@ internal sealed class DoubleTopBottomDetectionService(
         var result = CreateResult(ticker, candles);
 
         if (candles == null ||
-            candles.Count < _settings.RequiredHistoryCandles)
+            candles.Count < _settings.DoubleTopBottomRequiredHistoryCandles)
         {
             return result;
         }
 
         var patternStartIndex =
-            candles.Count - _settings.PatternLookbackCandles;
+            candles.Count - _settings.DoubleTopBottomPatternLookbackCandles;
 
         var swingLows = swingPointService
             .FindSwingLows(
@@ -51,7 +51,7 @@ internal sealed class DoubleTopBottomDetectionService(
             "PatternCandles: {PatternCandles}, SwingHighs: {SwingHighs}, " +
             "SwingLows: {SwingLows}",
             ticker,
-            _settings.PatternLookbackCandles,
+            _settings.DoubleTopBottomPatternLookbackCandles,
             swingHighs.Count,
             swingLows.Count);
 

@@ -13,6 +13,11 @@ internal sealed class HeadAndShouldersDetectionService(
     ILogger<HeadAndShouldersDetectionService> logger)
     : IHeadAndShouldersDetectionService
 {
+    private const decimal InverseHeadDepthPercent = 3m;
+    private const decimal InverseShoulderDifferencePercent = 3m;
+    private const decimal TopHeadExtensionPercent = 3m;
+    private const decimal TopShoulderDifferencePercent = 3m;
+
     private readonly SwingPatternSettings _settings = options.Value;
 
     public HeadAndShouldersResult Detect(
@@ -83,9 +88,10 @@ internal sealed class HeadAndShouldersDetectionService(
                     if (leftShoulder.Price <= 0 ||
                         head.Price <= 0 ||
                         rightShoulder.Price <= 0 ||
-                        head.Price > 0.97m * Math.Min(leftShoulder.Price, rightShoulder.Price) ||
-                        Math.Abs(leftShoulder.Price - rightShoulder.Price) >
-                        0.03m * leftShoulder.Price ||
+                        !HasValidInverseShoulderGeometry(
+                            leftShoulder.Price,
+                            head.Price,
+                            rightShoulder.Price) ||
                         !PriceTrendEvaluator.HasPriorDowntrend(
                             candles,
                             leftShoulder.Index,
@@ -94,6 +100,8 @@ internal sealed class HeadAndShouldersDetectionService(
                         continue;
                     }
 
+                    // P1 and P2 must be major swing highs in the two intervals
+                    // between LS -> H and H -> RS, respectively.
                     var firstNecklinePoint = swingHighs
                         .Where(point =>
                             point.Index > leftShoulder.Index &&
@@ -150,6 +158,35 @@ internal sealed class HeadAndShouldersDetectionService(
         return null;
     }
 
+    private static bool HasValidInverseShoulderGeometry(
+        decimal leftShoulder,
+        decimal head,
+        decimal rightShoulder)
+    {
+        var lowerShoulder = Math.Min(leftShoulder, rightShoulder);
+        var maximumHeadPrice = lowerShoulder * (1m - InverseHeadDepthPercent / 100m);
+        var maximumShoulderDifference =
+            leftShoulder * InverseShoulderDifferencePercent / 100m;
+
+        // Formula: H <= 0.97 * min(LS, RS), and |LS - RS| <= 0.03 * LS.
+        return head <= maximumHeadPrice &&
+               Math.Abs(leftShoulder - rightShoulder) <= maximumShoulderDifference;
+    }
+
+    private static bool HasValidTopShoulderGeometry(
+        decimal leftShoulder,
+        decimal head,
+        decimal rightShoulder)
+    {
+        var higherShoulder = Math.Max(leftShoulder, rightShoulder);
+        var minimumHeadPrice = higherShoulder * (1m + TopHeadExtensionPercent / 100m);
+        var maximumShoulderDifference = head * TopShoulderDifferencePercent / 100m;
+
+        // Formula: H >= 1.03 * max(LS, RS), and |LS - RS| <= 0.03 * H.
+        return head >= minimumHeadPrice &&
+               Math.Abs(leftShoulder - rightShoulder) <= maximumShoulderDifference;
+    }
+
     private Candidate? FindTopPattern(
         string ticker,
         List<MarketCandle> candles,
@@ -177,8 +214,10 @@ internal sealed class HeadAndShouldersDetectionService(
                     if (leftShoulder.Price <= 0 ||
                         head.Price <= 0 ||
                         rightShoulder.Price <= 0 ||
-                        head.Price < 1.03m * Math.Max(leftShoulder.Price, rightShoulder.Price) ||
-                        Math.Abs(leftShoulder.Price - rightShoulder.Price) > 0.03m * head.Price ||
+                        !HasValidTopShoulderGeometry(
+                            leftShoulder.Price,
+                            head.Price,
+                            rightShoulder.Price) ||
                         !PriceTrendEvaluator.HasPriorUptrend(
                             candles,
                             leftShoulder.Index,
@@ -187,6 +226,8 @@ internal sealed class HeadAndShouldersDetectionService(
                         continue;
                     }
 
+                    // T1 and T2 must be major swing lows below their respective
+                    // shoulders, between LS -> H and H -> RS.
                     var firstNecklinePoint = swingLows
                         .Where(point =>
                             point.Index > leftShoulder.Index &&

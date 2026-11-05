@@ -142,8 +142,15 @@ internal sealed class SymmetricalTriangleDetectionService(
         result.UpperTrendline = upperTrendline;
         result.LowerTrendline = lowerTrendline;
 
-        result.Pattern = "SymmetricalTriangle";
-        result.IsPatternDetected = true;
+        // A converging triangle is only an alert when today's close
+        // breaks one of its projected boundaries.
+        result.BreakoutDirection = latestCandle.Close > upperTrendline
+            ? "Bullish"
+            : latestCandle.Close < lowerTrendline
+                ? "Bearish"
+                : null;
+
+        result.IsPatternDetected = result.BreakoutDirection is not null;
 
         return result;
     }

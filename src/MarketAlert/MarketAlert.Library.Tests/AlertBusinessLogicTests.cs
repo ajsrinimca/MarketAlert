@@ -53,10 +53,13 @@ public sealed class AlertBusinessLogicTests
             [Swing(4, 110), Swing(10, 108)],
             [Swing(6, 90), Swing(12, 92)]);
         var detector = new SymmetricalTriangleDetectionService(swings, Options.Create(TriangleSettings()));
+        var candles = Candles(20);
+        candles[^1].Close = 106m;
 
-        var result = detector.Detect("ABC", Candles(20));
+        var result = detector.Detect("ABC", candles);
 
         Assert.True(result.IsPatternDetected);
+        Assert.Equal("Bullish", result.BreakoutDirection);
         Assert.True(result.UpperTrendline > result.LowerTrendline);
     }
 
@@ -261,7 +264,7 @@ public sealed class AlertBusinessLogicTests
     [Fact]
     public void HeadAndShoulders_RequiresOrderedPivotsNecklineAndPriorTrend()
     {
-        var candles = Candles(80);
+        var candles = Candles(110);
         SetTrend(candles, 10, 30, rising: false);
         var swings = new FixedSwingPoints(
             [Swing(36, 105), Swing(45, 106)],
@@ -279,9 +282,32 @@ public sealed class AlertBusinessLogicTests
     }
 
     [Fact]
+    public void InverseHeadAndShoulders_AppliesHeadAndShoulderFormulaBoundaries()
+    {
+        HeadAndShouldersResult Detect(decimal head, decimal rightShoulder)
+        {
+            var candles = Candles(110);
+            SetTrend(candles, 10, 30, rising: false);
+            var swings = new FixedSwingPoints(
+                [Swing(36, 105), Swing(45, 106)],
+                [Swing(32, 100), Swing(40, head), Swing(50, rightShoulder)]);
+            var detector = new HeadAndShouldersDetectionService(
+                swings,
+                Options.Create(new SwingPatternSettings()),
+                NullLogger<HeadAndShouldersDetectionService>.Instance);
+
+            return detector.Detect("ABC", candles);
+        }
+
+        Assert.True(Detect(head: 97m, rightShoulder: 103m).IsPatternDetected);
+        Assert.False(Detect(head: 97.01m, rightShoulder: 100m).IsPatternDetected);
+        Assert.False(Detect(head: 97m, rightShoulder: 103.01m).IsPatternDetected);
+    }
+
+    [Fact]
     public void HeadAndShouldersTop_RequiresHigherHeadAndPriorUptrend()
     {
-        var candles = Candles(80);
+        var candles = Candles(110);
         SetTrend(candles, 10, 30, rising: true);
         var swings = new FixedSwingPoints(
             [Swing(32, 100), Swing(40, 110), Swing(50, 101)],
@@ -296,6 +322,29 @@ public sealed class AlertBusinessLogicTests
         Assert.True(result.IsPatternDetected);
         Assert.Equal("Head & Shoulders Top", result.PatternType);
         Assert.Equal("Uptrend", result.PriorTrend);
+    }
+
+    [Fact]
+    public void HeadAndShouldersTop_AppliesHeadAndShoulderFormulaBoundaries()
+    {
+        HeadAndShouldersResult Detect(decimal head, decimal rightShoulder)
+        {
+            var candles = Candles(110);
+            SetTrend(candles, 10, 30, rising: true);
+            var swings = new FixedSwingPoints(
+                [Swing(32, 100), Swing(40, head), Swing(50, rightShoulder)],
+                [Swing(36, 95), Swing(45, 94)]);
+            var detector = new HeadAndShouldersDetectionService(
+                swings,
+                Options.Create(new SwingPatternSettings()),
+                NullLogger<HeadAndShouldersDetectionService>.Instance);
+
+            return detector.Detect("ABC", candles);
+        }
+
+        Assert.True(Detect(head: 106.09m, rightShoulder: 103m).IsPatternDetected);
+        Assert.False(Detect(head: 106.08m, rightShoulder: 103m).IsPatternDetected);
+        Assert.False(Detect(head: 106.296m, rightShoulder: 103.2m).IsPatternDetected);
     }
 
     [Fact]

@@ -246,7 +246,7 @@ internal sealed class TriangleDetectionService(
             var referencePrice =
                 result[0].Price;
 
-            if (IsEqualLevel(
+            if (IsWithinPercentOfReference(
                 point.Price,
                 referencePrice))
             {
@@ -261,20 +261,20 @@ internal sealed class TriangleDetectionService(
     // EQUAL LEVEL CHECK
     // =============================================================
 
-    private bool IsEqualLevel(
-        decimal price1,
-        decimal price2)
+    private bool IsWithinPercentOfReference(
+        decimal price,
+        decimal referencePrice)
     {
-        if (price1 == 0)
+        if (referencePrice <= 0)
         {
             return false;
         }
 
         var difference =
-            Math.Abs(price1 - price2);
+            Math.Abs(price - referencePrice);
 
         var allowedDifference =
-            Math.Abs(price1) *
+            referencePrice *
             (_settings.EqualLevelPercent / 100m);
 
         return difference <= allowedDifference;

@@ -18,7 +18,7 @@ internal sealed class FlagPennantDetectionService : IFlagPennantDetectionService
             Ticker = ticker
         };
 
-        if (candles.Count < 10)
+        if (candles is null || candles.Count < 10)
         {
             return result;
         }
@@ -171,9 +171,15 @@ internal sealed class FlagPennantDetectionService : IFlagPennantDetectionService
         var recovery =
             (high - candles[poleEnd].Close) / move * 100m;
 
-        if (recovery < 0 ||
-            recovery > 50m ||
-            Slope(candles, flagStart, flagEnd, x => x.Close) < 0)
+        if (recovery < 0 || recovery > 50m)
+        {
+            return false;
+        }
+
+        // The supplied rule defines the bearish continuation as a flag
+        // drifting upward or sideways. Pennant classification is defined
+        // with the bullish setup above, so do not bypass this rule here.
+        if (Slope(candles, flagStart, flagEnd, x => x.Close) < 0)
         {
             return false;
         }

@@ -8,6 +8,8 @@ public class SymmetricalTriangleResult
 
     public bool IsPatternDetected { get; set; }
 
+    public string? BreakoutDirection { get; set; }
+
     public decimal UpperTrendline { get; set; }
 
     public decimal LowerTrendline { get; set; }

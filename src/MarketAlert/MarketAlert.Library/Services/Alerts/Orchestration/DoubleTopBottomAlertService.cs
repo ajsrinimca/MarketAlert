@@ -77,7 +77,7 @@ public sealed class DoubleTopBottomAlertService(
             exchange,
             tickers,
             includeLive,
-            _settings.RequiredHistoryCandles,
+            _settings.DoubleTopBottomRequiredHistoryCandles,
             cancellationToken);
 
         var response = new DoubleTopBottomResponse

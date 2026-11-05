@@ -122,9 +122,19 @@ public sealed class BlockBulkDealAlertService(
         foreach (var deal in deals.Where(deal => deal.DealCategory.Equals("BLOCK", StringComparison.OrdinalIgnoreCase)))
         {
             var dealValue = deal.Quantity * deal.TradePrice;
-            if (dealValue < settings.Value.BlockDealMinimumValueInr ||
-                !settings.Value.BlockRowsPrequalifiedBySource)
+            if (dealValue < settings.Value.BlockDealMinimumValueInr)
             {
+                continue;
+            }
+
+            if (!settings.Value.BlockRowsPrequalifiedBySource)
+            {
+                logger.LogWarning(
+                    "Block deal not evaluated because execution time and reference price are unavailable from the bulkblock source. Exchange: {Exchange}, Ticker: {Ticker}, DealDate: {DealDate}, DealValue: {DealValue}",
+                    exchange,
+                    deal.Ticker,
+                    dealDate.Value,
+                    dealValue);
                 continue;
             }
 

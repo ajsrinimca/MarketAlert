@@ -29,12 +29,14 @@ public static partial class ServiceExtensions
             .Validate(
                 settings =>
                     settings.PatternLookbackCandles >= 30 &&
-                    settings.PatternLookbackCandles <= 60 &&
+                    settings.PatternLookbackCandles <= 90 &&
+                    settings.DoubleTopBottomPatternLookbackCandles == 60 &&
                     settings.TrendLookbackCandles >= 2 &&
                     settings.SwingLeftBars > 0 &&
                     settings.SwingRightBars > 0 &&
-                    settings.RequiredHistoryCandles <= eodCandleCount,
-                "SwingPatterns requires a pattern lookback from 30 to 60 candles, " +
+                    settings.RequiredHistoryCandles <= eodCandleCount &&
+                    settings.DoubleTopBottomRequiredHistoryCandles <= eodCandleCount,
+                "SwingPatterns requires a pattern lookback from 30 to 90 candles, " +
                 "a trend lookback of at least 2 candles, positive swing confirmation " +
                 "bars, and total required history within MarketData:EodCandleCount.")
             .ValidateOnStart();
@@ -43,18 +45,16 @@ public static partial class ServiceExtensions
             .Bind(configuration.GetSection("CupHandle"))
             .Validate(
                 settings =>
-                    settings.MinimumCupCandles >= 30 &&
-                    settings.MaximumCupCandles <= 120 &&
-                    settings.MaximumCupCandles >= settings.MinimumCupCandles &&
-                    settings.MinimumHandleCandles >= 5 &&
-                    settings.MaximumHandleCandles <= 20 &&
-                    settings.MaximumHandleCandles >= settings.MinimumHandleCandles &&
-                    settings.RoundedBottomCandles >= 2 &&
-                    settings.RoundedBottomTolerancePercent > 0 &&
+                    settings.MinimumCupCandles == 30 &&
+                    settings.MaximumCupCandles == 120 &&
+                    settings.MinimumHandleCandles == 5 &&
+                    settings.MaximumHandleCandles == 20 &&
+                    settings.RoundedBottomCandles == 5 &&
+                    settings.RoundedBottomTolerancePercent == 3m &&
                     settings.RequiredHistoryCandles <= eodCandleCount,
-                "CupHandle settings require a 30–120 candle cup, a 5–20 candle handle, " +
-                "valid rounded-bottom settings, and enough MarketData:EodCandleCount " +
-                "for the maximum cup and handle.")
+                "CupHandle settings must use a 30–120 candle cup, a 5–20 candle handle, " +
+                "a five-candle rounded-bottom zone within 3% of the cup low, and enough " +
+                "MarketData:EodCandleCount for the maximum cup and handle.")
             .ValidateOnStart();
 
         var maxLookbackCandles =
@@ -85,7 +85,8 @@ public static partial class ServiceExtensions
             .Bind(configuration.GetSection("Triangle"))
             .Validate(
                 settings =>
-                    settings.MinLookbackCandles > 0 &&
+                    settings.MinLookbackCandles >= 20 &&
+                    settings.MaxLookbackCandles <= 50 &&
                     settings.MaxLookbackCandles >= settings.MinLookbackCandles &&
                     settings.DefaultLookbackCandles >= settings.MinLookbackCandles &&
                     settings.DefaultLookbackCandles <= settings.MaxLookbackCandles &&
@@ -94,7 +95,7 @@ public static partial class ServiceExtensions
                     settings.MinimumSwingHighs >= 2 &&
                     settings.MinimumSwingLows >= 2 &&
                     settings.EqualLevelPercent > 0,
-                "Triangle settings contain invalid lookback, swing, or level values.")
+                "Triangle lookback settings must stay within 20–50 candles, with the default inside that range; swing and level settings must also be valid.")
             .ValidateOnStart();
 
         services.AddOptions<RectangleBreakoutSettings>()
@@ -169,9 +170,9 @@ public static partial class ServiceExtensions
         services.AddOptions<BlockBulkDealSettings>()
             .Bind(configuration.GetSection("BlockBulkDeal"))
             .Validate(
-                settings => settings.BlockDealMinimumValueInr > 0 &&
-                            settings.BulkDealThresholdPercent >= 0,
-                "BlockBulkDeal requires a positive block value and non-negative bulk percentage threshold.")
+                settings => settings.BlockDealMinimumValueInr == 250_000_000m &&
+                            settings.BulkDealThresholdPercent == 0.5m,
+                "BlockBulkDeal requires a ₹250 crore block value threshold and a 0.5% bulk threshold.")
             .ValidateOnStart();
 
         services.AddOptions<ShortCoveringSettings>()

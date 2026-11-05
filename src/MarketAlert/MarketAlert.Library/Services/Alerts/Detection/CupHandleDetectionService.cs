@@ -175,21 +175,13 @@ internal sealed class CupHandleDetectionService(
         var allowedHigh = bottomPrice *
                           (1m + _settings.RoundedBottomTolerancePercent / 100m);
 
-        for (var start = middleThirdStart;
-             start + _settings.RoundedBottomCandles - 1 <= middleThirdEnd;
-             start++)
-        {
-            var bottomZone = candles
-                .Skip(start)
-                .Take(_settings.RoundedBottomCandles);
+        var middleThirdCandles = candles
+            .Skip(middleThirdStart)
+            .Take(middleThirdEnd - middleThirdStart + 1);
 
-            if (bottomZone.All(candle => candle.Low <= allowedHigh))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return middleThirdCandles.Count(
+            candle => candle.Low <= allowedHigh) >=
+            _settings.RoundedBottomCandles;
     }
 
     private static CupHandleResult CreateResult(

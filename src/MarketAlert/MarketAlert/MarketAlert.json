@@ -16,7 +16,8 @@
     "MinimumSwingLows": 2
   },
   "SwingPatterns": {
-    "PatternLookbackCandles": 60,
+    "PatternLookbackCandles": 90,
+    "DoubleTopBottomPatternLookbackCandles": 60,
     "TrendLookbackCandles": 20,
     "SwingLeftBars": 2,
     "SwingRightBars": 2
@@ -62,7 +63,7 @@
   "BlockBulkDeal": {
     "BlockDealMinimumValueInr": 250000000,
     "BulkDealThresholdPercent": 0.5,
-    "BlockRowsPrequalifiedBySource": true
+    "BlockRowsPrequalifiedBySource": false
   },
   "ShortCovering": {
     "LiveEvaluationCadenceMinutes": 15,
