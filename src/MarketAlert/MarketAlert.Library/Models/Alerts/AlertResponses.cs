@@ -1,6 +1,12 @@
 namespace MarketAlert.Library.Models.Alerts;
 
 public class AlertResponse<TItem>
+    : AlertResponse<TItem, AlertSummary>
+{
+}
+
+public class AlertResponse<TItem, TSummary>
+    where TSummary : AlertSummary, new()
 {
     public DateTimeOffset TimeStamp { get; set; }
 
@@ -10,7 +16,7 @@ public class AlertResponse<TItem>
 
     public List<TItem> Data { get; set; } = new();
 
-    public AlertSummary Summary { get; set; } = new();
+    public TSummary Summary { get; set; } = new();
 }
 
 public class FlagPennantResponse
@@ -89,6 +95,6 @@ public sealed class ShortCoveringResponse
 }
 
 public sealed class LongUnwindingAlertResponse
-    : AlertResponse<LongUnwindingAlertResult>
+    : AlertResponse<LongUnwindingAlertResult, LongUnwindingAlertSummary>
 {
 }

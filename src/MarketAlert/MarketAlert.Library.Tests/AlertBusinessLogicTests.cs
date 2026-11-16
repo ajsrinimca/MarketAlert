@@ -424,23 +424,54 @@ public sealed class AlertBusinessLogicTests
     }
 
     [Fact]
-    public async Task ShortCovering_ReportsUnavailableUntilPriceAndOiProviderExists()
+    public async Task ShortCovering_ReportsIncompleteWithoutTwoComparableEodSessions()
     {
         var service = new ShortCoveringAlertService(
-            marketStatusService: null!,
-            Options.Create(new ShortCoveringSettings
-            {
-                ScPercentFormula = "configured formula",
-                ScPercentThreshold = 30m
-            }),
+            new FakeLongUnwindingRepository(
+                new LongUnwindingEodSnapshot(null, null, ["NIFTY", "BANKNIFTY"], [])),
+            Options.Create(new ShortCoveringSettings()),
             NullLogger<ShortCoveringAlertService>.Instance);
 
         var response = await service.GetAlertsAsync("NSE", "Nifty", false);
 
         var result = Assert.Single(response.Data);
-        Assert.Equal("unavailable", result.EvaluationStatus);
+        Assert.Equal("incomplete_data", result.EvaluationStatus);
         Assert.Equal(0, response.Summary.Detected);
-        Assert.Contains("provider", result.EvaluationMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("trading dates", result.EvaluationMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ShortCovering_AlertsOnlyWhenIndexPriceRisesAndCombinedOiFalls()
+    {
+        var currentDate = new DateOnly(2026, 11, 4);
+        var previousDate = new DateOnly(2026, 11, 3);
+        var snapshot = new LongUnwindingEodSnapshot(
+            currentDate,
+            previousDate,
+            ["NIFTY", "BANKNIFTY"],
+            [
+                new("NIFTY", currentDate, 24_500m, 15_045_095m),
+                new("NIFTY", previousDate, 24_400m, 16_000_000m),
+                new("BANKNIFTY", currentDate, 52_000m, 8_000_000m),
+                new("BANKNIFTY", previousDate, 52_100m, 9_000_000m)
+            ]);
+        var service = new ShortCoveringAlertService(
+            new FakeLongUnwindingRepository(snapshot),
+            Options.Create(new ShortCoveringSettings
+            {
+                SupportedGroups = ["Nifty", "Bank Nifty", "Nifty", "BankNifty"]
+            }),
+            NullLogger<ShortCoveringAlertService>.Instance);
+
+        var response = await service.GetAlertsAsync("NSE", null, includeLive: false);
+
+        Assert.Equal(2, response.Data.Count);
+        Assert.Equal(2, response.Data.Select(result => result.Ticker).Distinct().Count());
+        Assert.True(response.Data.Single(result => result.Ticker == "NIFTY").IsPatternDetected);
+        Assert.False(response.Data.Single(result => result.Ticker == "BANKNIFTY").IsPatternDetected);
+        Assert.Equal(15_045_095m, response.Data.Single(result => result.Ticker == "NIFTY").CurrentCombinedOI);
+        Assert.Equal(2, response.Summary.Processed);
+        Assert.Equal(1, response.Summary.Detected);
     }
 
     [Fact]
@@ -472,17 +503,60 @@ public sealed class AlertBusinessLogicTests
     public async Task LongUnwinding_ReportsIncompleteUntilComparablePriceAndOiDataExists()
     {
         var service = new LongUnwindingAlertService(
-            new FakeLongUnwindingRepository(["ABC", "XYZ"]),
-            marketStatusService: null!,
+            new FakeLongUnwindingRepository(
+                new LongUnwindingEodSnapshot(null, null, ["ABC", "XYZ"], [])),
             Options.Create(new LongUnwindingSettings()),
             NullLogger<LongUnwindingAlertService>.Instance);
 
         var response = await service.GetAlertsAsync("NSE", null, false);
 
-        var evaluation = Assert.Single(response.Data);
-        Assert.Equal("incomplete_data", evaluation.EvaluationStatus);
-        Assert.Equal(2, evaluation.TotalFnoUnderlyings);
+        Assert.Equal("incomplete_data", response.Summary.EvaluationStatus);
+        Assert.Equal(2, response.Summary.TotalFnoUnderlyings);
+        Assert.Equal(2, response.Data.Count);
+        Assert.All(
+            response.Data,
+            result => Assert.Equal("incomplete_data", result.EvaluationStatus));
         Assert.Equal(0, response.Summary.Detected);
+    }
+
+    [Fact]
+    public async Task LongUnwinding_UsesFullUniverseAndAlertsAtThirtyPercent()
+    {
+        var currentDate = new DateOnly(2026, 11, 4);
+        var previousDate = new DateOnly(2026, 11, 3);
+        var tickers = Enumerable.Range(1, 10).Select(index => $"STOCK{index}").ToList();
+        var observations = new List<LongUnwindingEodObservation>();
+
+        for (var i = 0; i < tickers.Count; i++)
+        {
+            var isLongUnwinding = i < 3;
+            observations.Add(new LongUnwindingEodObservation(
+                tickers[i], currentDate, isLongUnwinding ? 90m : 110m, isLongUnwinding ? 90m : 110m));
+            observations.Add(new LongUnwindingEodObservation(
+                tickers[i], previousDate, 100m, 100m));
+        }
+
+        var snapshot = new LongUnwindingEodSnapshot(
+            currentDate,
+            previousDate,
+            tickers,
+            observations);
+        var service = new LongUnwindingAlertService(
+            new FakeLongUnwindingRepository(snapshot),
+            Options.Create(new LongUnwindingSettings()),
+            NullLogger<LongUnwindingAlertService>.Instance);
+
+        var response = await service.GetAlertsAsync("NSE", null, includeLive: false);
+
+        Assert.Equal(10, response.Data.Count);
+        Assert.Equal("evaluated", response.Summary.EvaluationStatus);
+        Assert.Equal(10, response.Summary.TotalFnoUnderlyings);
+        Assert.Equal(10, response.Summary.EvaluatedUnderlyings);
+        Assert.Equal(3, response.Summary.LongUnwindingCount);
+        Assert.Equal(30m, response.Summary.LuPercent);
+        Assert.True(response.Summary.MarketLevelAlertDetected);
+        Assert.Equal(3, response.Summary.Detected);
+        Assert.Equal(3, response.Data.Count(result => result.IsPatternDetected));
     }
 
     [Fact]
@@ -794,10 +868,12 @@ public sealed class AlertBusinessLogicTests
             Task.FromResult(shares);
     }
 
-    private sealed class FakeLongUnwindingRepository(List<string> tickers) : ILongUnwindingRepository
+    private sealed class FakeLongUnwindingRepository(LongUnwindingEodSnapshot snapshot) : ILongUnwindingRepository
     {
-        public Task<List<string>> GetFnoUnderlyingTickersAsync(string exchange, CancellationToken cancellationToken = default) =>
-            Task.FromResult(tickers);
+        public Task<LongUnwindingEodSnapshot> GetEodSnapshotAsync(
+            string exchange,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(snapshot);
     }
 
     private sealed class OpenMarketStatusService : IMarketStatusService

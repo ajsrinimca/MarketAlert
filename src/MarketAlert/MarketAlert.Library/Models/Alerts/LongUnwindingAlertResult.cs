@@ -2,12 +2,31 @@ namespace MarketAlert.Library.Models.Alerts;
 
 public sealed class LongUnwindingAlertResult
 {
-    public string AlertType { get; set; } = "LongUnwindingAlert";
+    public string Ticker { get; set; } = string.Empty;
 
-    public string EvaluationMode { get; set; } = "EOD";
+    public bool IsPatternDetected { get; set; }
 
-    public bool IsProvisional { get; set; }
+    public string EvaluationStatus { get; set; } = "data_unavailable";
 
+    public string? EvaluationDate { get; set; }
+
+    public decimal? Price { get; set; }
+
+    public decimal? ComparisonPrice { get; set; }
+
+    public decimal? OpenInterest { get; set; }
+
+    public decimal? ComparisonOpenInterest { get; set; }
+
+    public DateTimeOffset? ObservationTime { get; set; }
+
+    public DateTimeOffset? ComparisonTime { get; set; }
+
+    public string? EvaluationMessage { get; set; }
+}
+
+public sealed class LongUnwindingAlertSummary : AlertSummary
+{
     public string EvaluationStatus { get; set; } = "data_unavailable";
 
     public string? EvaluationDate { get; set; }
@@ -39,27 +58,4 @@ public sealed class LongUnwindingAlertResult
     public bool? IndexConditionGatesAlert { get; set; }
 
     public string? EvaluationMessage { get; set; }
-
-    public List<LongUnwindingUnderlyingResult> UnderlyingResults { get; set; } = new();
-}
-
-public sealed class LongUnwindingUnderlyingResult
-{
-    public string Ticker { get; set; } = string.Empty;
-
-    public decimal? Price { get; set; }
-
-    public decimal? ComparisonPrice { get; set; }
-
-    public decimal? OpenInterest { get; set; }
-
-    public decimal? ComparisonOpenInterest { get; set; }
-
-    public bool? IsLongUnwinding { get; set; }
-
-    public DateTimeOffset? ObservationTime { get; set; }
-
-    public DateTimeOffset? ComparisonTime { get; set; }
-
-    public string EvaluationStatus { get; set; } = "data_unavailable";
 }

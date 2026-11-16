@@ -66,18 +66,13 @@
     "BlockRowsPrequalifiedBySource": false
   },
   "ShortCovering": {
-    "LiveEvaluationCadenceMinutes": 15,
-    "MarketSegment": "FO",
-    "ScPercentFormula": null,
-    "ScPercentThreshold": null,
     "SupportedGroups": [
       "Nifty",
       "Bank Nifty"
     ]
   },
   "LongUnwinding": {
-    "ThresholdPercent": 30.0,
-    "MarketSegment": "FO"
+    "ThresholdPercent": 30.0
   },
   "LiveMarket": {
     "BaseUrl": "https://dartstock-uatserv.upstox.com/",

@@ -74,7 +74,11 @@ public static partial class ServiceExtensions
         services.AddScoped<IShortCoveringAlertService, ShortCoveringAlertService>();
         services.AddScoped<IInsideBarNr7Nr4DetectionService, InsideBarNr7Nr4DetectionService>();
         services.AddScoped<IInsideBarNr7Nr4AlertService, InsideBarNr7Nr4AlertService>();
-        services.AddScoped<ILongUnwindingRepository, LongUnwindingRepository>();
+        services.AddScoped<LongUnwindingRepository>();
+        services.AddScoped<IFuturesEodRepository>(
+            serviceProvider => serviceProvider.GetRequiredService<LongUnwindingRepository>());
+        services.AddScoped<ILongUnwindingRepository>(
+            serviceProvider => serviceProvider.GetRequiredService<LongUnwindingRepository>());
         services.AddScoped<ILongUnwindingAlertService, LongUnwindingAlertService>();
 
         return services;

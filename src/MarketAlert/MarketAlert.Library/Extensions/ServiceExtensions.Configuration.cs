@@ -178,21 +178,18 @@ public static partial class ServiceExtensions
         services.AddOptions<ShortCoveringSettings>()
             .Bind(configuration.GetSection("ShortCovering"))
             .Validate(
-                settings => settings.LiveEvaluationCadenceMinutes == 15 &&
-                            !string.IsNullOrWhiteSpace(settings.MarketSegment) &&
-                            settings.SupportedGroups.Count > 0 &&
+                settings => settings.SupportedGroups.Count > 0 &&
                             settings.SupportedGroups.All(group => !string.IsNullOrWhiteSpace(group)) &&
-                            (settings.ScPercentThreshold is null || settings.ScPercentThreshold >= 0) &&
-                            (string.IsNullOrWhiteSpace(settings.ScPercentFormula) == (settings.ScPercentThreshold is null)),
-                "ShortCovering requires a 15-minute live cadence, a market segment, supported groups, and either both or neither SC% formula and threshold.")
+                            settings.SupportedGroups.Contains("Nifty", StringComparer.OrdinalIgnoreCase) &&
+                            settings.SupportedGroups.Contains("Bank Nifty", StringComparer.OrdinalIgnoreCase),
+                "ShortCovering requires Nifty and Bank Nifty futures groups.")
             .ValidateOnStart();
 
         services.AddOptions<LongUnwindingSettings>()
             .Bind(configuration.GetSection("LongUnwinding"))
             .Validate(
-                settings => settings.ThresholdPercent == 30m &&
-                            !string.IsNullOrWhiteSpace(settings.MarketSegment),
-                "LongUnwinding requires the specified 30% threshold and a configured market segment.")
+                settings => settings.ThresholdPercent == 30m,
+                "LongUnwinding requires the specified 30% threshold.")
             .ValidateOnStart();
 
         return services;

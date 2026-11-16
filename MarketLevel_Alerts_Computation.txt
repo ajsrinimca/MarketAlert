@@ -1,0 +1,124 @@
+MARKET LEVEL ALERTS - HOW TO COMPUTE FROM webexpress_stats.sqlite
+==================================================================
+
+Covers two alerts from DataVerification.xlsx:
+  1. Short Covering Alert (Market Level)
+  2. Long Unwinding Alert (Market Level)
+
+Both alerts compare TODAY (t) with the PREVIOUS TRADING DAY (t-1)
+using Futures PRICE and Futures OI (Open Interest).
+
+
+------------------------------------------------------------------
+1. THE FORMULAS
+------------------------------------------------------------------
+
+Short Covering (for NIFTY / BANKNIFTY futures):
+    Price[t] > Price[t-1]  AND  OI[t] < OI[t-1]
+    -> price went UP, OI went DOWN
+
+Long Unwinding (for each F&O underlying):
+    Price[t] < Price[t-1]  AND  OI[t] < OI[t-1]
+    -> price went DOWN, OI went DOWN
+
+    LU % = (No. of underlyings in Long Unwinding / Total F&O underlyings) x 100
+    Alert when LU % >= 30%
+
+
+------------------------------------------------------------------
+2. TABLES WE USE
+------------------------------------------------------------------
+
+EODData        -> daily data per token
+                  TradedDate, Token, Close, OI
+                  (use ExchangeId = 1 for NSE)
+
+masterdetail   -> tells us what each token is
+                  ticker        = underlying name (NIFTY, RELIANCE ...)
+                  instrument_id = 2 (Stock Futures) / 4 (Index Futures)
+                  fo_month      = 1 (near month), 2 (next), 3 (far)
+
+Join:  EODData.Token = masterdetail.token
+       AND EODData.ExchangeId = masterdetail.exchange
+
+
+------------------------------------------------------------------
+3. STEP BY STEP
+------------------------------------------------------------------
+
+Step 1: Get the last two trading dates
+        SELECT DISTINCT TradedDate FROM EODData
+        WHERE ExchangeId = 1 ORDER BY TradedDate DESC LIMIT 2;
+        -> latest = t, second = t-1
+
+Step 2: For each underlying and each of the two dates, get:
+        Price = Close of the NEAR MONTH future (fo_month = 1)
+        OI    = SUM of OI of ALL futures expiries (month 1 + 2 + 3)
+
+Step 3: Compare t vs t-1 for each underlying and tag it:
+        Price down + OI down -> Long Unwinding
+        Price up   + OI down -> Short Covering
+
+Step 4: Short Covering Alert
+        Check only NIFTY and BANKNIFTY. If the condition is true,
+        raise the alert for that index.
+
+Step 5: Long Unwinding Alert
+        Count the underlyings tagged as Long Unwinding.
+        Divide by the total number of F&O underlyings, then x 100.
+        If the result is >= 30, raise the alert.
+
+
+------------------------------------------------------------------
+4. SAMPLE QUERY (price + OI per underlying per day)
+------------------------------------------------------------------
+
+SELECT  m.ticker,
+        e.TradedDate,
+        MAX(CASE WHEN m.fo_month = 1 THEN e.Close END) AS Price,
+        SUM(e.OI)                                     AS OI
+FROM    EODData e
+JOIN    masterdetail m
+        ON m.token = e.Token AND m.exchange = e.ExchangeId
+WHERE   e.ExchangeId = 1
+  AND   m.instrument_id IN (2, 4)        -- stock + index futures
+  AND   e.TradedDate IN (<t>, <t-1>)
+GROUP BY m.ticker, e.TradedDate;
+
+The result has one row per underlying per date. Compare the two rows
+for each ticker.
+
+
+------------------------------------------------------------------
+5. TESTED RESULTS (data in the file today)
+------------------------------------------------------------------
+
+Total F&O underlyings: 224 (218 stocks + 6 indices)
+
+Date        LU Count   LU %    LU Alert   NIFTY SC   BANKNIFTY SC
+29-Oct-26      14       6.2%     No         Yes         Yes
+30-Oct-26      79      35.3%     YES        Yes         No
+02-Nov-26      18       8.0%     No         Yes         Yes
+03-Nov-26      31      13.8%     No         Yes         Yes
+04-Nov-26      16       7.1%     No         Yes         No
+
+Check: NIFTY futures OI on 04-Nov = 15,045,095.
+This matches CombinedOI.FutCmbOI, so the OI logic is correct.
+
+
+------------------------------------------------------------------
+6. POINTS TO NOTE
+------------------------------------------------------------------
+
+- EODData has only the last 6 trading days. That is enough for
+  t vs t-1.
+- Do NOT use EODData.Ticker. It is empty/NULL for F&O rows.
+  Always get the ticker from masterdetail.
+- CombinedOI has only the latest day (no t-1), so use it only to
+  cross-check.
+- PTDData is old (last updated 2024). Do not use it.
+- To be decided by the team:
+    a) "Combined OI" = futures only, or futures + options?
+       (Options OI is also in EODData, instrument_id 3 and 5.)
+    b) Should index futures count in the total F&O underlyings?
+       (NIFTYFPI looks unusual and may need to be excluded.)
